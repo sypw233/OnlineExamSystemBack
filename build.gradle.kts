@@ -24,7 +24,9 @@ dependencies{
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-validation")
-    implementation("com.github.xiaoymin:knife4j-openapi3-jakarta-spring-boot-starter:4.3.0")
+    
+    // OpenAPI documentation - use springdoc directly for Spring Boot 4.0
+    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0")
     
     // JWT
     implementation("io.jsonwebtoken:jjwt-api:0.12.3")

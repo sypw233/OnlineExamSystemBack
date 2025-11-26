@@ -19,6 +19,9 @@ data class Course(
     @Column(columnDefinition = "TEXT")
     var description: String? = null,
 
+    @Column(nullable = false)
+    var status: Int = 1, // 1=active, 0=inactive
+
     @Column(name = "create_time", nullable = false, updatable = false)
     val createTime: LocalDateTime = LocalDateTime.now()
 )
