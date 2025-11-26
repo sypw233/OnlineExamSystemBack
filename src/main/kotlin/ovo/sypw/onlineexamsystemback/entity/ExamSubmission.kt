@@ -36,5 +36,13 @@ data class ExamSubmission(
     val startTime: LocalDateTime = LocalDateTime.now(),
 
     @Column(name = "submit_time")
-    var submitTime: LocalDateTime? = null
+    var submitTime: LocalDateTime? = null,
+
+    // 监考数据
+    @Column(name = "switch_count", nullable = false)
+    var switchCount: Int = 0, // 切出次数
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "proctoring_data", columnDefinition = "jsonb")
+    var proctoringData: String? = null // 监考详细数据（JSON）
 )
