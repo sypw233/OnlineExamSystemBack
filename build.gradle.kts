@@ -39,6 +39,9 @@ dependencies{
     // Baidu Cloud BOS SDK
     implementation("com.baidubce:bce-java-sdk:0.10.165")
     
+    // HTTP Client for OpenAI API
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     runtimeOnly("org.postgresql:postgresql")
     testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")

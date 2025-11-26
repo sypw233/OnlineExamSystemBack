@@ -38,7 +38,10 @@ ovo.sypw.onlineexamsystem
 │   ├── QuestionController
 │   ├── QuestionBankController
 │   ├── ExamController
-│   └── SubmissionController
+│   ├── SubmissionController
+│   ├── FileController
+│   ├── StatisticsController
+│   └── AiGradingController
 │
 ├── service              # 服务层
 │   ├── UserService
@@ -46,7 +49,10 @@ ovo.sypw.onlineexamsystem
 │   ├── QuestionService
 │   ├── QuestionBankService
 │   ├── ExamService
-│   └── SubmissionService
+│   ├── SubmissionService
+│   ├── FileService
+│   ├── StatisticsService
+│   └── AiGradingService
 │
 ├── repository           # 数据访问层
 │   ├── UserRepository
@@ -57,7 +63,8 @@ ovo.sypw.onlineexamsystem
 │   ├── QuestionBankQuestionRepository
 │   ├── ExamRepository
 │   ├── ExamQuestionRepository
-│   └── ExamSubmissionRepository
+│   ├── ExamSubmissionRepository
+│   └── AiConfigRepository
 │
 ├── entity               # 实体类
 │   ├── User
@@ -68,7 +75,8 @@ ovo.sypw.onlineexamsystem
 │   ├── QuestionBankQuestion
 │   ├── Exam
 │   ├── ExamQuestion
-│   └── ExamSubmission
+│   ├── ExamSubmission
+│   └── AiConfig
 │
 ├── dto                  # 数据传输对象
 │   ├── request
@@ -89,7 +97,9 @@ ovo.sypw.onlineexamsystem
 │   ├── SwaggerConfig
 │   ├── WebConfig
 │   ├── SecurityConfig    # JWT安全配置
-│   └── FileUploadConfig  # 文件上传配置
+│   ├── FileUploadConfig  # 文件上传配置
+│   ├── BosConfig         # 百度云BOS配置
+│   └── OpenAIConfig      # OpenAI API配置
 │
 ├── security             # 安全模块
 │   ├── JwtTokenProvider  # JWT生成和验证
@@ -221,7 +231,84 @@ ovo.sypw.onlineexamsystem
 - `GET /api/statistics/student/{studentId}` - 学生成绩分析
 - `GET /api/statistics/overview` - 系统总览（管理员）
 
-### 8. JWT认证模块 (JWT Authentication)
+### 8. AI辅助判题模块 (AI-Assisted Grading)
+
+**功能**:
+- 使用AI大模型辅助批改主观题
+- 基于题目内容、参考答案、学生答案进行智能判分
+- 提供详细的评分依据和建议
+- 支持多种AI模型（OpenAI GPT系列等）
+- 管理员可配置AI模型参数
+
+**核心接口**:
+- `POST /api/ai-grading/grade` - AI辅助判题
+- `GET /api/ai-grading/config` - 获取AI配置（管理员）
+- `PUT /api/ai-grading/config` - 更新AI配置（管理员）
+
+**技术实现**:
+- **AI服务提供商**: OpenAI API
+- **支持模型**: GPT-4, GPT-3.5-turbo等
+- **请求格式**: JSON格式，包含题目、参考答案、学生答案
+- **数据存储**: ai_config表存储系统提示词、模型配置等
+
+**判题流程**:
+```mermaid
+graph LR
+    A[教师发起AI判题] --> B[获取题目信息]
+    B --> C[构建AI请求]
+    C --> D[调用OpenAI API]
+    D --> E[解析AI响应]
+    E --> F[返回评分和说明]
+    F --> G[教师确认或调整]
+```
+
+**AI请求示例**:
+```json
+{
+  "questionId": 123,
+  "questionContent": "请简述Java多态的概念和应用场景",
+  "referenceAnswer": "多态是指同一个接口可以有多种实现...",
+  "studentAnswer": "多态就是一个方法可以有多种形式..."
+}
+```
+
+**AI响应示例**:
+```json
+{
+  "suggestedScore": 7,
+  "maxScore": 10,
+  "explanation": "学生理解了多态的基本概念，但缺少具体应用场景的描述...",
+  "strengths": ["理解基本概念", "表述清晰"],
+  "improvements": ["需补充应用场景", "可以举例说明"]
+}
+```
+
+**AI配置管理**:
+- 系统提示词（System Prompt）：定义AI判题的评分标准和行为
+- 模型选择：GPT-4 / GPT-3.5-turbo等
+- 温度参数（Temperature）：控制AI输出的随机性
+- 最大Token数：限制响应长度
+
+**数据表设计**:
+```sql
+CREATE TABLE ai_config (
+    id BIGSERIAL PRIMARY KEY,
+    config_key VARCHAR(100) NOT NULL UNIQUE,
+    config_value TEXT,
+    description VARCHAR(255),
+    updated_by BIGINT REFERENCES users(id),
+    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 预设配置
+INSERT INTO ai_config (config_key, config_value, description) VALUES
+('system_prompt', '你是一个专业的教师助手...', 'AI判题系统提示词'),
+('model_name', 'gpt-3.5-turbo', '使用的AI模型'),
+('temperature', '0.3', '模型温度参数'),
+('max_tokens', '500', '最大响应Token数');
+```
+
+### 9. JWT认证模块 (JWT Authentication)
 
 **功能**:
 - 用户登录认证
