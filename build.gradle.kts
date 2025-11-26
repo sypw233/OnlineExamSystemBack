@@ -42,6 +42,10 @@ dependencies{
     // HTTP Client for OpenAI API
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     
+    // Apache POI for Excel import/export
+    implementation("org.apache.poi:poi-ooxml:5.2.5")
+    implementation("org.apache.poi:poi:5.2.5")
+    
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     runtimeOnly("org.postgresql:postgresql")
     testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
