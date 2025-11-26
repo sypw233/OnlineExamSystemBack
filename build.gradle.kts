@@ -36,6 +36,9 @@ dependencies{
     // File Upload
     implementation("commons-io:commons-io:2.15.1")
     
+    // Baidu Cloud BOS SDK
+    implementation("com.baidubce:bce-java-sdk:0.10.165")
+    
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     runtimeOnly("org.postgresql:postgresql")
     testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
