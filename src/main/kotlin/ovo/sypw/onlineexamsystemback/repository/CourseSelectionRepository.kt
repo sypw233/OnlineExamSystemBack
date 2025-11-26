@@ -2,7 +2,6 @@ package ovo.sypw.onlineexamsystemback.repository
 
 import ovo.sypw.onlineexamsystemback.entity.CourseSelection
 import org.springframework.data.jpa.repository.JpaRepository
-import org.springframework.data.jpa.repository.Query
 import org.springframework.stereotype.Repository
 
 @Repository

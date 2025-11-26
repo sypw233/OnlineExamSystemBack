@@ -41,7 +41,10 @@ ovo.sypw.onlineexamsystem
 │   ├── SubmissionController
 │   ├── FileController
 │   ├── StatisticsController
-│   └── AiGradingController
+│   ├── AiGradingController
+│   ├── NotificationController
+│   ├── ScheduleController
+│   └── QuestionImportExportController
 │
 ├── service              # 服务层
 │   ├── UserService
@@ -52,7 +55,10 @@ ovo.sypw.onlineexamsystem
 │   ├── SubmissionService
 │   ├── FileService
 │   ├── StatisticsService
-│   └── AiGradingService
+│   ├── AiGradingService
+│   ├── NotificationService
+│   ├── ScheduleService
+│   └── QuestionImportExportService
 │
 ├── repository           # 数据访问层
 │   ├── UserRepository
@@ -64,7 +70,9 @@ ovo.sypw.onlineexamsystem
 │   ├── ExamRepository
 │   ├── ExamQuestionRepository
 │   ├── ExamSubmissionRepository
-│   └── AiConfigRepository
+│   ├── AiConfigRepository
+│   ├── NotificationRepository
+│   └── ImportTaskRepository
 │
 ├── entity               # 实体类
 │   ├── User
@@ -76,7 +84,9 @@ ovo.sypw.onlineexamsystem
 │   ├── Exam
 │   ├── ExamQuestion
 │   ├── ExamSubmission
-│   └── AiConfig
+│   ├── AiConfig
+│   ├── Notification
+│   └── ImportTask
 │
 ├── dto                  # 数据传输对象
 │   ├── request
@@ -308,7 +318,201 @@ INSERT INTO ai_config (config_key, config_value, description) VALUES
 ('max_tokens', '500', '最大响应Token数');
 ```
 
-### 9. JWT认证模块 (JWT Authentication)
+### 9. 通知系统模块 (Notification System)
+
+**功能**:
+- 系统消息通知（考试发布、成绩发布等）
+- 个人消息管理
+- 未读消息提醒
+- 消息已读/未读状态
+- 消息删除
+
+**核心接口**:
+- `GET /api/notifications` - 获取通知列表
+- `GET /api/notifications/unread-count` - 未读消息数量
+- `PUT /api/notifications/{id}/read` - 标记为已读
+- `PUT /api/notifications/read-all` - 全部标记为已读
+- `DELETE /api/notifications/{id}` - 删除通知
+
+**通知类型**:
+- **EXAM_PUBLISHED**: 考试发布通知
+- **EXAM_REMINDER**: 考试提醒（考前24小时、1小时）
+- **GRADE_RELEASED**: 成绩发布通知
+- **COURSE_UPDATE**: 课程更新通知
+- **SYSTEM_ANNOUNCEMENT**: 系统公告
+
+**数据表设计**:
+```sql
+CREATE TABLE notifications (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id),
+    type VARCHAR(50) NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    content TEXT,
+    related_id BIGINT,          -- 关联的考试/课程ID
+    is_read BOOLEAN DEFAULT false,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_notifications_user_id ON notifications(user_id);
+CREATE INDEX idx_notifications_is_read ON notifications(user_id, is_read);
+```
+
+**自动通知触发**:
+- 考试发布时 → 向选课学生发送通知
+- 成绩发布时 → 向考生发送通知
+- 考前24小时 → 定时任务发送提醒
+- 考前1小时 → 定时任务发送提醒
+
+---
+
+### 10. 考试日程管理 (Exam Scheduling)
+
+**功能**:
+- 我的考试日程列表
+- 日历视图展示
+- 考试状态分类（即将开始、进行中、已结束）
+- 考试倒计时
+- 即将到来的考试提醒
+
+**核心接口**:
+- `GET /api/schedule/my-exams` - 我的考试日程
+- `GET /api/schedule/calendar` - 月度日历数据
+- `GET /api/schedule/upcoming` - 即将到来的考试（未来7天）
+- `GET /api/schedule/{examId}/countdown` - 考试倒计时
+
+**日程状态**:
+```kotlin
+enum class ExamScheduleStatus {
+    UPCOMING,       // 即将开始（未开始）
+    IN_PROGRESS,    // 进行中
+    COMPLETED,      // 已结束（未提交）
+    SUBMITTED       // 已提交
+}
+```
+
+**响应数据结构**:
+```json
+{
+  "examId": 1,
+  "examTitle": "Java期中考试",
+  "courseName": "Java程序设计",
+  "startTime": "2024-12-01 10:00:00",
+  "endTime": "2024-12-01 12:00:00",
+  "duration": 120,
+  "status": "UPCOMING",
+  "countdown": "距离开始还有2小时30分",
+  "isSubmitted": false
+}
+```
+
+**日历视图数据**:
+```json
+{
+  "year": 2024,
+  "month": 12,
+  "days": [
+    {
+      "date": "2024-12-01",
+      "exams": [
+        {"examId": 1, "title": "Java期中", "startTime": "10:00"}
+      ]
+    }
+  ]
+}
+```
+
+**前端展示**:
+- 时间轴视图（按时间排序）
+- 日历视图（月度/周度）
+- 状态筛选（全部/进行中/即将开始）
+- 倒计时实时更新
+
+---
+
+### 11. 题目导入导出 (Question Import/Export)
+
+**功能**:
+- Excel批量导入题目
+- Word文档导入
+- 题库导出（Excel格式）
+- 导入模板下载
+- 导入结果验证与错误报告
+
+**核心接口**:
+- `POST /api/questions/import` - 导入题目（Multipart）
+- `GET /api/questions/export?bankId={id}` - 导出题库
+- `GET /api/questions/template` - 下载导入模板
+- `GET /api/questions/import-result/{taskId}` - 查询导入结果
+
+**Excel导入格式**:
+| 列名 | 说明 | 示例 |
+|------|------|------|
+| 题型 | single/multiple/true_false/fill_blank/short_answer | single |
+| 题目内容 | 题目描述 | Java是什么类型的语言？ |
+| 选项A | 单选/多选题的选项 | 编译型语言 |
+| 选项B | 单选/多选题的选项 | 解释型语言 |
+| 选项C | 单选/多选题的选项 | 混合型语言 |
+| 选项D | 单选/多选题的选项 | 标记语言 |
+| 正确答案 | 答案（单选:A, 多选:A,C） | C |
+| 解析 | 题目解析 | Java是编译+解释的... |
+| 难度 | easy/medium/hard | medium |
+| 标签 | 知识点标签（逗号分隔） | Java基础,语言特性 |
+
+**技术实现**:
+- **Excel处理**: Apache POI (XSSF)
+- **数据验证**: 
+  - 题型有效性检查
+  - 答案格式验证
+  - 必填字段检查
+  - 选项完整性验证
+
+**导入流程**:
+```
+上传文件
+    ↓
+解析Excel/Word
+    ↓
+数据验证
+    ↓
+批量插入数据库
+    ↓
+返回导入结果
+    ├─ 成功数量
+    ├─ 失败数量
+    └─ 错误详情（第X行：错误原因）
+```
+
+**导入结果响应**:
+```json
+{
+  "taskId": "uuid",
+  "totalRows": 100,
+  "successCount": 95,
+  "failedCount": 5,
+  "errors": [
+    {"row": 3, "reason": "题型无效: singlee"},
+    {"row": 15, "reason": "缺少必填字段: 题目内容"},
+    {"row": 28, "reason": "单选题必须有4个选项"}
+  ]
+}
+```
+
+**导出功能**:
+- 支持按题库导出
+- 支持按题型筛选导出
+- 支持按难度筛选导出
+- Excel格式，包含所有题目信息
+
+**依赖库**:
+```gradle
+implementation("org.apache.poi:poi-ooxml:5.2.5")
+implementation("org.apache.poi:poi:5.2.5")
+```
+
+---
+
+### 12. JWT认证模块 (JWT Authentication)
 
 **功能**:
 - 用户登录认证
