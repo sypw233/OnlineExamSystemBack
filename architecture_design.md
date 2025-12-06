@@ -6,8 +6,7 @@
 - **语言**: Kotlin (JVM)
 - **数据库**: PostgreSQL
 - **ORM**: Spring Data JPA
-- **API文档**: Knife4j (OpenAPI 3)
-- **Java版本**: 25
+- **Java版本**: 24
 
 ## 分层架构
 
