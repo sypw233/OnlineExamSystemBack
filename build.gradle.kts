@@ -43,7 +43,7 @@ dependencies{
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     
     // Apache POI for Excel import/export
-    implementation("org.apache.poi:poi-ooxml:5.2.5")
+    implementation("org.apache.poi:poi-ooxml:5.4.0")
     implementation("org.apache.poi:poi:5.2.5")
     
     implementation("org.jetbrains.kotlin:kotlin-reflect")
