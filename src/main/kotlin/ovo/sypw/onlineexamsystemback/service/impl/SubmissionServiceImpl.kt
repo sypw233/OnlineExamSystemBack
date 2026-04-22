@@ -8,6 +8,7 @@ import ovo.sypw.onlineexamsystemback.dto.request.SubmissionRequest
 import ovo.sypw.onlineexamsystemback.dto.response.SubmissionResponse
 import ovo.sypw.onlineexamsystemback.entity.ExamSubmission
 import ovo.sypw.onlineexamsystemback.repository.*
+import ovo.sypw.onlineexamsystemback.service.NotificationService
 import ovo.sypw.onlineexamsystemback.service.SubmissionService
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.Page
@@ -24,7 +25,8 @@ class SubmissionServiceImpl(
     private val examQuestionRepository: ExamQuestionRepository,
     private val questionRepository: QuestionRepository,
     private val userRepository: UserRepository,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val notificationService: NotificationService
 ) : SubmissionService {
 
     private val logger = LoggerFactory.getLogger(SubmissionServiceImpl::class.java)
@@ -237,6 +239,19 @@ class SubmissionServiceImpl(
         submission.status = 2 // Graded
 
         val gradedSubmission = submissionRepository.save(submission)
+
+        // Send grade released notification
+        try {
+            notificationService.sendGradeReleasedNotification(
+                examId = exam.id!!,
+                examTitle = exam.title,
+                studentId = submission.userId,
+                score = totalScore
+            )
+        } catch (e: Exception) {
+            logger.warn("发送成绩通知失败: ${e.message}")
+        }
+
         val user = userRepository.findById(submission.userId).orElseThrow { throw IllegalArgumentException("用户不存在") }
         return toSubmissionResponse(gradedSubmission, exam.title, user.realName ?: user.username)
     }
@@ -325,6 +340,40 @@ class SubmissionServiceImpl(
 
         submissionRepository.save(submission)
         return submission.status == 1 // Return true if auto-submitted
+    }
+
+    override fun getProctoringData(submissionId: Long, userId: Long, userRole: String): Map<String, Any> {
+        val submission = submissionRepository.findById(submissionId).orElseThrow {
+            throw IllegalArgumentException("提交记录不存在")
+        }
+
+        // Permission check
+        if (userRole == "student" && submission.userId != userId) {
+            throw IllegalArgumentException("您没有权限查看此监考记录")
+        }
+
+        val exam = examRepository.findById(submission.examId).orElseThrow {
+            throw IllegalArgumentException("考试不存在")
+        }
+
+        if (userRole == "teacher" && exam.creatorId != userId) {
+            throw IllegalArgumentException("您没有权限查看此监考记录")
+        }
+
+        val proctoringData = if (submission.proctoringData != null) {
+            objectMapper.readValue(submission.proctoringData!!, object : TypeReference<Map<String, Any>>() {})
+        } else {
+            emptyMap()
+        }
+
+        return mapOf(
+            "submissionId" to submissionId,
+            "examId" to submission.examId,
+            "userId" to submission.userId,
+            "switchCount" to submission.switchCount,
+            "proctoringData" to proctoringData,
+            "status" to submission.status
+        )
     }
 
     /**

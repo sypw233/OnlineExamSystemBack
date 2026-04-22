@@ -9,7 +9,9 @@ import ovo.sypw.onlineexamsystemback.dto.request.ResetPasswordRequest
 import ovo.sypw.onlineexamsystemback.dto.request.UserCreateRequest
 import ovo.sypw.onlineexamsystemback.dto.request.UserUpdateRequest
 import ovo.sypw.onlineexamsystemback.dto.response.UserResponse
+import ovo.sypw.onlineexamsystemback.entity.User
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
+import ovo.sypw.onlineexamsystemback.security.CurrentUser
 import ovo.sypw.onlineexamsystemback.service.UserManagementService
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.data.domain.Page
@@ -103,16 +105,13 @@ class UserManagementController(
     @DeleteMapping("/{id}")
     @Operation(summary = "删除用户", description = "管理员删除指定用户, 无法删除自己")
     fun deleteUser(
+        @CurrentUser user: User,
         @Parameter(description = "用户ID") @PathVariable id: Long
     ): Result<String> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-        val currentUser = userRepository.findByUsername(authentication.name)
-            ?: return Result.error("用户不存在", 404)
-        if (currentUser.role != "admin") {
+        if (user.role != "admin") {
             return Result.error("权限不足, 仅管理员可以访问此接口", 403)
         }
-        if (currentUser.id == id) {
+        if (user.id == id) {
             return Result.error("不能删除自己的账号", 400)
         }
         return try {
@@ -154,16 +153,13 @@ class UserManagementController(
     @PutMapping("/{id}/disable")
     @Operation(summary = "禁用用户账号", description = "管理员禁用指定用户账号, 无法禁用自己")
     fun disableUser(
+        @CurrentUser user: User,
         @Parameter(description = "用户ID") @PathVariable id: Long
     ): Result<UserResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-        val currentUser = userRepository.findByUsername(authentication.name)
-            ?: return Result.error("用户不存在", 404)
-        if (currentUser.role != "admin") {
+        if (user.role != "admin") {
             return Result.error("权限不足, 仅管理员可以访问此接口", 403)
         }
-        if (currentUser.id == id) {
+        if (user.id == id) {
             return Result.error("不能禁用自己的账号", 400)
         }
         return try {

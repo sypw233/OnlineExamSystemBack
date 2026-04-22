@@ -7,12 +7,12 @@ import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
 import ovo.sypw.onlineexamsystemback.dto.response.FileUploadResponse
-import ovo.sypw.onlineexamsystemback.repository.UserRepository
+import ovo.sypw.onlineexamsystemback.entity.User
+import ovo.sypw.onlineexamsystemback.security.CurrentUser
 import ovo.sypw.onlineexamsystemback.service.FileService
 import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.http.MediaType
-import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.multipart.MultipartFile
 
@@ -20,8 +20,7 @@ import org.springframework.web.multipart.MultipartFile
 @RequestMapping("/api/files")
 @Tag(name = "文件管理", description = "文件上传、删除和访问")
 class FileController(
-    private val fileService: FileService,
-    private val userRepository: UserRepository
+    private val fileService: FileService
 ) {
 
     @PostMapping("/image", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
@@ -55,6 +54,7 @@ class FileController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun uploadImage(
+        @CurrentUser user: User,
         @Parameter(
             description = "图片文件",
             required = true,
@@ -69,13 +69,6 @@ class FileController(
         )
         @RequestParam(defaultValue = "temp") category: String
     ): Result<FileUploadResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         // Only teacher and admin can upload
         if (user.role != "teacher" && user.role != "admin") {
             return Result.error("只有教师和管理员可以上传文件", 403)
@@ -120,6 +113,7 @@ class FileController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun uploadDocument(
+        @CurrentUser user: User,
         @Parameter(
             description = "文档文件",
             required = true,
@@ -134,13 +128,6 @@ class FileController(
         )
         @RequestParam(defaultValue = "temp") category: String
     ): Result<FileUploadResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         // Only teacher and admin can upload
         if (user.role != "teacher" && user.role != "admin") {
             return Result.error("只有教师和管理员可以上传文件", 403)
@@ -171,19 +158,13 @@ class FileController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun deleteFile(
+        @CurrentUser user: User,
         @Parameter(
             description = "文件Key（完整路径）",
             example = "images/questions/20241126/abc123.jpg"
         )
         @PathVariable fileKey: String
     ): Result<String> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         // Only teacher and admin can delete
         if (user.role != "teacher" && user.role != "admin") {
             return Result.error("只有教师和管理员可以删除文件", 403)
@@ -211,19 +192,13 @@ class FileController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun getFileUrl(
+        @CurrentUser user: User,
         @Parameter(
             description = "文件Key（完整路径）",
             example = "images/questions/20241126/abc123.jpg"
         )
         @PathVariable fileKey: String
     ): Result<Map<String, String>> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             val url = fileService.getFileUrl(fileKey)
             Result.success(mapOf("url" to url))

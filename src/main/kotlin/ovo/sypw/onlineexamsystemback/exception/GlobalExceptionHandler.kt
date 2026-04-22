@@ -2,6 +2,7 @@ package ovo.sypw.onlineexamsystemback.exception
 
 import com.fasterxml.jackson.databind.exc.InvalidDefinitionException
 import com.fasterxml.jackson.databind.exc.MismatchedInputException
+import ovo.sypw.onlineexamsystemback.security.CurrentUserException
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
@@ -49,6 +50,16 @@ class GlobalExceptionHandler {
             else -> "请求体解析失败: ${ex.message}"
         }
         return Result.error(message, 400)
+    }
+
+    @ExceptionHandler(CurrentUserException::class)
+    fun handleCurrentUserException(ex: CurrentUserException): Result<Nothing> {
+        val status = when (ex.errorCode) {
+            401 -> HttpStatus.UNAUTHORIZED
+            404 -> HttpStatus.NOT_FOUND
+            else -> HttpStatus.BAD_REQUEST
+        }
+        return Result.error(ex.errorMessage, ex.errorCode)
     }
 
     @ExceptionHandler(Exception::class)

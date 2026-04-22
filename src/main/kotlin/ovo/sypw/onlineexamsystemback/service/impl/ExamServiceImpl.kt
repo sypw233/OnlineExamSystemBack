@@ -8,6 +8,7 @@ import ovo.sypw.onlineexamsystemback.entity.Exam
 import ovo.sypw.onlineexamsystemback.entity.ExamQuestion
 import ovo.sypw.onlineexamsystemback.repository.*
 import ovo.sypw.onlineexamsystemback.service.ExamService
+import ovo.sypw.onlineexamsystemback.service.NotificationService
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
@@ -22,7 +23,9 @@ class ExamServiceImpl(
     private val courseRepository: CourseRepository,
     private val userRepository: UserRepository,
     private val questionRepository: QuestionRepository,
-    private val submissionRepository: ExamSubmissionRepository
+    private val submissionRepository: ExamSubmissionRepository,
+    private val courseSelectionRepository: CourseSelectionRepository,
+    private val notificationService: NotificationService
 ) : ExamService {
 
     override fun createExam(examRequest: ExamRequest, creatorId: Long): ExamResponse {
@@ -273,6 +276,96 @@ class ExamServiceImpl(
         }
     }
 
+    override fun getStudentAvailableExams(studentId: Long, pageable: Pageable): Page<ExamResponse> {
+        // Get student's enrolled courses
+        val enrollments = courseSelectionRepository.findByStudentId(studentId)
+        if (enrollments.isEmpty()) return Page.empty(pageable)
+
+        val courseIds = enrollments.map { it.courseId }
+        val now = LocalDateTime.now()
+
+        // Get all published exams for these courses
+        val allExams = courseIds.flatMap { courseId ->
+            examRepository.findByCourseIdAndStatus(courseId, 1)
+        }.filter { exam ->
+            // Exam is currently active (started but not ended)
+            !now.isBefore(exam.startTime) && !now.isAfter(exam.endTime)
+        }.filter { exam ->
+            // Student has not submitted yet
+            val submission = submissionRepository.findByExamIdAndUserId(exam.id!!, studentId)
+            submission == null || submission.status == 0
+        }.sortedByDescending { it.startTime }
+
+        // Manual pagination
+        val start = pageable.offset.toInt()
+        val end = (start + pageable.pageSize).coerceAtMost(allExams.size)
+        val pageContent = if (start < allExams.size) allExams.subList(start, end) else emptyList()
+
+        val creatorIds = pageContent.map { it.creatorId }.toSet()
+        val creators = userRepository.findAllById(creatorIds).associateBy { it.id }
+        val examIds = pageContent.mapNotNull { it.id }
+        val questionCounts = examQuestionRepository.countByExamIdIn(examIds)
+            .associate { (it[0] as Number).toLong() to (it[1] as Number).toLong() }
+
+        val responses = pageContent.map { exam ->
+            val course = courseRepository.findById(exam.courseId).orElseThrow {
+                throw IllegalArgumentException("课程不存在")
+            }
+            val creator = creators[exam.creatorId] ?: throw IllegalArgumentException("创建者不存在")
+            toExamResponse(exam, course.courseName, creator.realName ?: creator.username, questionCounts[exam.id] ?: 0)
+        }
+
+        return org.springframework.data.domain.PageImpl(responses, pageable, allExams.size.toLong())
+    }
+
+    override fun getStudentCompletedExams(studentId: Long, pageable: Pageable): Page<ExamResponse> {
+        // Get student's submissions that are submitted or graded
+        val submissions = submissionRepository.findByUserId(studentId, Pageable.unpaged()).content
+            .filter { it.status >= 1 }
+
+        // Also get exams from enrolled courses that have ended
+        val enrollments = courseSelectionRepository.findByStudentId(studentId)
+        val courseIds = enrollments.map { it.courseId }
+        val now = LocalDateTime.now()
+
+        val endedExams = courseIds.flatMap { courseId ->
+            examRepository.findByCourseId(courseId)
+        }.filter { exam ->
+            exam.status == 2 || now.isAfter(exam.endTime)
+        }.filter { exam ->
+            // Not already included via submission
+            submissions.none { it.examId == exam.id }
+        }
+
+        // Combine: exams with submissions + ended exams without submission
+        val submittedExamIds = submissions.map { it.examId }.toSet()
+        val allExamIds = (submittedExamIds + endedExams.mapNotNull { it.id }).toList()
+
+        if (allExamIds.isEmpty()) return Page.empty(pageable)
+
+        val exams = examRepository.findAllById(allExamIds).sortedByDescending { it.endTime }
+
+        // Manual pagination
+        val start = pageable.offset.toInt()
+        val end = (start + pageable.pageSize).coerceAtMost(exams.size)
+        val pageContent = if (start < exams.size) exams.subList(start, end) else emptyList()
+
+        val creatorIds = pageContent.map { it.creatorId }.toSet()
+        val creators = userRepository.findAllById(creatorIds).associateBy { it.id }
+        val questionCounts = examQuestionRepository.countByExamIdIn(pageContent.mapNotNull { it.id })
+            .associate { (it[0] as Number).toLong() to (it[1] as Number).toLong() }
+
+        val responses = pageContent.map { exam ->
+            val course = courseRepository.findById(exam.courseId).orElseThrow {
+                throw IllegalArgumentException("课程不存在")
+            }
+            val creator = creators[exam.creatorId] ?: throw IllegalArgumentException("创建者不存在")
+            toExamResponse(exam, course.courseName, creator.realName ?: creator.username, questionCounts[exam.id] ?: 0)
+        }
+
+        return org.springframework.data.domain.PageImpl(responses, pageable, exams.size.toLong())
+    }
+
     override fun patchExam(id: Long, status: Int?, userId: Long, userRole: String): ExamResponse {
         val exam = examRepository.findById(id).orElseThrow {
             throw IllegalArgumentException("考试不存在")
@@ -301,11 +394,32 @@ class ExamServiceImpl(
                     }
                     exam.status = 1
                 }
+                2 -> {
+                    // End exam
+                    if (exam.status != 1) {
+                        throw IllegalArgumentException("只有已发布的考试可以结束")
+                    }
+                    exam.status = 2
+                }
                 else -> throw IllegalArgumentException("不支持的状态值: $status")
             }
         }
 
         val patchedExam = examRepository.save(exam)
+
+        // Auto-send notification when exam is published
+        if (status == 1 && exam.status == 1) {
+            val studentIds = courseSelectionRepository.findByCourseId(exam.courseId)
+                .map { it.studentId }
+            if (studentIds.isNotEmpty()) {
+                notificationService.sendExamPublishedNotification(
+                    examId = id,
+                    examTitle = exam.title,
+                    studentIds = studentIds
+                )
+            }
+        }
+
         val course = courseRepository.findById(exam.courseId).orElseThrow {
             throw IllegalArgumentException("课程不存在")
         }

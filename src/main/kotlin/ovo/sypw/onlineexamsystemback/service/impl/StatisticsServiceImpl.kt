@@ -2,11 +2,15 @@ package ovo.sypw.onlineexamsystemback.service.impl
 
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
+import ovo.sypw.onlineexamsystemback.dto.request.ExamScoreExportRequest
 import ovo.sypw.onlineexamsystemback.dto.response.*
 import ovo.sypw.onlineexamsystemback.repository.*
 import ovo.sypw.onlineexamsystemback.service.StatisticsService
+import org.apache.poi.ss.usermodel.Workbook
+import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.io.ByteArrayOutputStream
 import kotlin.math.round
 
 @Service
@@ -268,5 +272,73 @@ class StatisticsServiceImpl(
             totalQuestions = totalQuestions,
             totalSubmissions = totalSubmissions
         )
+    }
+
+    override fun exportExamScores(examId: Long, config: ExamScoreExportRequest): ByteArray {
+        val exam = examRepository.findById(examId).orElseThrow {
+            throw IllegalArgumentException("考试不存在")
+        }
+
+        val submissions = submissionRepository.findByExamId(examId).filter { it.status >= 1 }
+        val userIds = submissions.map { it.userId }.toSet()
+        val users = userRepository.findAllById(userIds).associateBy { it.id }
+
+        val workbook: Workbook = XSSFWorkbook()
+        val sheet = workbook.createSheet("成绩列表")
+
+        // Create header row
+        val headerRow = sheet.createRow(0)
+        var colIndex = 0
+        if (config.includeStudentId) headerRow.createCell(colIndex++).setCellValue("学号")
+        if (config.includeStudentName) headerRow.createCell(colIndex++).setCellValue("姓名")
+        if (config.includeScore) headerRow.createCell(colIndex++).setCellValue("得分")
+        if (config.includeSubmitTime) headerRow.createCell(colIndex++).setCellValue("提交时间")
+        if (config.includeStatus) headerRow.createCell(colIndex++).setCellValue("状态")
+        if (config.includeSwitchCount) headerRow.createCell(colIndex++).setCellValue("切出次数")
+        if (config.includeProctoringAbnormal) headerRow.createCell(colIndex++).setCellValue("监考异常")
+
+        // Create data rows
+        submissions.forEachIndexed { index, submission ->
+            val row = sheet.createRow(index + 1)
+            val user = users[submission.userId]
+            var cellIndex = 0
+
+            if (config.includeStudentId) {
+                row.createCell(cellIndex++).setCellValue(user?.id?.toString() ?: "")
+            }
+            if (config.includeStudentName) {
+                row.createCell(cellIndex++).setCellValue(user?.realName ?: user?.username ?: "")
+            }
+            if (config.includeScore) {
+                row.createCell(cellIndex++).setCellValue(submission.submitScore?.toString() ?: "未评分")
+            }
+            if (config.includeSubmitTime) {
+                row.createCell(cellIndex++).setCellValue(submission.submitTime?.toString() ?: "")
+            }
+            if (config.includeStatus) {
+                val statusText = when (submission.status) {
+                    1 -> "已提交"
+                    2 -> "已评分"
+                    else -> "未知"
+                }
+                row.createCell(cellIndex++).setCellValue(statusText)
+            }
+            if (config.includeSwitchCount) {
+                row.createCell(cellIndex++).setCellValue(submission.switchCount.toString())
+            }
+            if (config.includeProctoringAbnormal) {
+                val hasAbnormal = submission.switchCount > 0
+                row.createCell(cellIndex++).setCellValue(if (hasAbnormal) "是" else "否")
+            }
+        }
+
+        // Auto-size columns
+        for (i in 0 until colIndex) {
+            sheet.autoSizeColumn(i)
+        }
+
+        val outputStream = ByteArrayOutputStream()
+        workbook.use { it.write(outputStream) }
+        return outputStream.toByteArray()
     }
 }

@@ -8,21 +8,20 @@ import jakarta.validation.Valid
 import ovo.sypw.onlineexamsystemback.dto.request.QuestionBankRequest
 import ovo.sypw.onlineexamsystemback.dto.response.QuestionBankResponse
 import ovo.sypw.onlineexamsystemback.dto.response.QuestionResponse
-import ovo.sypw.onlineexamsystemback.repository.UserRepository
+import ovo.sypw.onlineexamsystemback.entity.User
+import ovo.sypw.onlineexamsystemback.security.CurrentUser
 import ovo.sypw.onlineexamsystemback.service.QuestionBankService
 import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
-import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.*
 
 @RestController
 @RequestMapping("/api/question-banks")
 @Tag(name = "题库管理", description = "题库相关接口")
 class QuestionBankController(
-    private val questionBankService: QuestionBankService,
-    private val userRepository: UserRepository
+    private val questionBankService: QuestionBankService
 ) {
 
     @PostMapping
@@ -31,14 +30,10 @@ class QuestionBankController(
         description = "教师和管理员创建新题库",
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
-    fun createQuestionBank(@Valid @RequestBody request: QuestionBankRequest): Result<QuestionBankResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
+    fun createQuestionBank(
+        @Valid @RequestBody request: QuestionBankRequest,
+        @CurrentUser user: User
+    ): Result<QuestionBankResponse> {
         if (user.role != "teacher" && user.role != "admin") {
             return Result.error("只有教师和管理员可以创建题库", 403)
         }
@@ -59,15 +54,9 @@ class QuestionBankController(
     )
     fun getAllQuestionBanks(
         @Parameter(description = "页码", example = "0") @RequestParam(defaultValue = "0") page: Int,
-        @Parameter(description = "每页条数", example = "20") @RequestParam(defaultValue = "20") size: Int
+        @Parameter(description = "每页条数", example = "20") @RequestParam(defaultValue = "20") size: Int,
+        @CurrentUser user: User
     ): Result<Page<QuestionBankResponse>> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         val pageable = PageRequest.of(page, size.coerceAtMost(100))
         val questionBanks = if (user.role == "admin") {
             questionBankService.getAllQuestionBanks(pageable)
@@ -77,31 +66,6 @@ class QuestionBankController(
         return Result.success(questionBanks)
     }
 
-    @GetMapping("/my")
-    @Operation(
-        summary = "获取我的题库(兼容)",
-        description = "管理员获取全部题库，教师获取自己创建的题库，支持分页",
-        security = [SecurityRequirement(name = "Bearer Authentication")]
-    )
-    fun getMyQuestionBanks(
-        @Parameter(description = "页码", example = "0") @RequestParam(defaultValue = "0") page: Int,
-        @Parameter(description = "每页条数", example = "20") @RequestParam(defaultValue = "20") size: Int
-    ): Result<Page<QuestionBankResponse>> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
-        val pageable = PageRequest.of(page, size.coerceAtMost(100))
-        val questionBanks = if (user.role == "admin") {
-            questionBankService.getAllQuestionBanks(pageable)
-        } else {
-            questionBankService.getMyQuestionBanks(user.safeId, pageable)
-        }
-        return Result.success(questionBanks)
-    }
 
     @GetMapping("/{id:\\d+}")
     @Operation(
@@ -110,15 +74,9 @@ class QuestionBankController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun getQuestionBankById(
-        @Parameter(description = "题库ID") @PathVariable id: Long
+        @Parameter(description = "题库ID") @PathVariable id: Long,
+        @CurrentUser user: User
     ): Result<QuestionBankResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             val questionBank = questionBankService.getQuestionBankById(id)
             Result.success(questionBank)
@@ -135,15 +93,9 @@ class QuestionBankController(
     )
     fun updateQuestionBank(
         @Parameter(description = "题库ID") @PathVariable id: Long,
-        @Valid @RequestBody request: QuestionBankRequest
+        @Valid @RequestBody request: QuestionBankRequest,
+        @CurrentUser user: User
     ): Result<QuestionBankResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             val questionBank = questionBankService.updateQuestionBank(id, request, user.safeId, user.role)
             Result.success(questionBank, "题库更新成功")
@@ -159,15 +111,9 @@ class QuestionBankController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun deleteQuestionBank(
-        @Parameter(description = "题库ID") @PathVariable id: Long
+        @Parameter(description = "题库ID") @PathVariable id: Long,
+        @CurrentUser user: User
     ): Result<String> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             questionBankService.deleteQuestionBank(id, user.safeId, user.role)
             Result.success("题库删除成功")
@@ -193,15 +139,9 @@ class QuestionBankController(
     )
     fun addQuestionToBank(
         @Parameter(description = "题库ID", example = "1") @PathVariable id: Long,
-        @Parameter(description = "题目ID", example = "1") @PathVariable questionId: Long
+        @Parameter(description = "题目ID", example = "1") @PathVariable questionId: Long,
+        @CurrentUser user: User
     ): Result<String> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             questionBankService.addQuestionToBank(id, questionId, user.safeId, user.role)
             Result.success("题目添加成功")
@@ -218,15 +158,9 @@ class QuestionBankController(
     )
     fun removeQuestionFromBank(
         @Parameter(description = "题库ID") @PathVariable id: Long,
-        @Parameter(description = "题目ID") @PathVariable questionId: Long
+        @Parameter(description = "题目ID") @PathVariable questionId: Long,
+        @CurrentUser user: User
     ): Result<String> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             questionBankService.removeQuestionFromBank(id, questionId, user.safeId, user.role)
             Result.success("题目移除成功")
@@ -250,15 +184,9 @@ class QuestionBankController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun getQuestionsInBank(
-        @Parameter(description = "题库ID", example = "1") @PathVariable id: Long
+        @Parameter(description = "题库ID", example = "1") @PathVariable id: Long,
+        @CurrentUser user: User
     ): Result<List<QuestionResponse>> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         if (user.role == "student") {
             return Result.error("学生无权查看题库题目", 403)
         }

@@ -5,11 +5,11 @@ import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
 import ovo.sypw.onlineexamsystemback.dto.response.ImportResultResponse
-import ovo.sypw.onlineexamsystemback.repository.UserRepository
+import ovo.sypw.onlineexamsystemback.entity.User
+import ovo.sypw.onlineexamsystemback.security.CurrentUser
 import ovo.sypw.onlineexamsystemback.service.QuestionImportExportService
 import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
-import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.multipart.MultipartFile
 
@@ -17,8 +17,7 @@ import org.springframework.web.multipart.MultipartFile
 @RequestMapping("/api/question-import-export")
 @Tag(name = "题目导入导出", description = "Excel批量导入导出题目")
 class QuestionImportExportController(
-    private val questionImportExportService: QuestionImportExportService,
-    private val userRepository: UserRepository
+    private val questionImportExportService: QuestionImportExportService
 ) {
 
     @PostMapping("/import")
@@ -51,19 +50,13 @@ class QuestionImportExportController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun importQuestions(
+        @CurrentUser user: User,
         @Parameter(description = "Excel文件", required = true)
         @RequestParam("file") file: MultipartFile,
-        
+
         @Parameter(description = "题库ID", example = "1", required = true)
         @RequestParam("bankId") bankId: Long
     ): Result<ImportResultResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         if (user.role != "teacher" && user.role != "admin") {
             return Result.error("只有教师和管理员可以导入题目", 403)
         }
@@ -107,16 +100,10 @@ class QuestionImportExportController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun exportQuestions(
+        @CurrentUser user: User,
         @Parameter(description = "题库ID", example = "1", required = true)
         @RequestParam("bankId") bankId: Long
     ): Result<String> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         if (user.role != "teacher" && user.role != "admin") {
             return Result.error("只有教师和管理员可以导出题库", 403)
         }
@@ -147,14 +134,9 @@ class QuestionImportExportController(
         """,
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
-    fun downloadTemplate(): Result<String> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
+    fun downloadTemplate(
+        @CurrentUser user: User
+    ): Result<String> {
         if (user.role != "teacher" && user.role != "admin") {
             return Result.error("只有教师和管理员可以下载模板", 403)
         }

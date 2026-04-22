@@ -28,6 +28,10 @@ interface ExamService {
         pageable: Pageable
     ): Page<ExamResponse>
 
+    // Student exam lists
+    fun getStudentAvailableExams(studentId: Long, pageable: Pageable): Page<ExamResponse>
+    fun getStudentCompletedExams(studentId: Long, pageable: Pageable): Page<ExamResponse>
+
     // Publish management (kept for internal use)
     fun publishExam(id: Long, userId: Long, userRole: String): ExamResponse
 

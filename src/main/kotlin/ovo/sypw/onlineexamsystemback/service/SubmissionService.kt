@@ -28,4 +28,7 @@ interface SubmissionService {
 
     // Record proctoring event
     fun recordProctoringEvent(request: ProctoringEventRequest, userId: Long): Boolean
+
+    // Get proctoring data for a submission
+    fun getProctoringData(submissionId: Long, userId: Long, userRole: String): Map<String, Any>
 }

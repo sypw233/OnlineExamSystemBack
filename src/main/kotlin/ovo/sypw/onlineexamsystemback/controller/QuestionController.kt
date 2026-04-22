@@ -8,21 +8,20 @@ import jakarta.validation.Valid
 import io.swagger.v3.oas.annotations.media.Schema
 import ovo.sypw.onlineexamsystemback.dto.request.QuestionRequest
 import ovo.sypw.onlineexamsystemback.dto.response.QuestionResponse
-import ovo.sypw.onlineexamsystemback.repository.UserRepository
+import ovo.sypw.onlineexamsystemback.entity.User
+import ovo.sypw.onlineexamsystemback.security.CurrentUser
 import ovo.sypw.onlineexamsystemback.service.QuestionService
 import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
-import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.*
 
 @RestController
 @RequestMapping("/api/questions")
 @Tag(name = "题目管理", description = "题目相关接口")
 class QuestionController(
-    private val questionService: QuestionService,
-    private val userRepository: UserRepository
+    private val questionService: QuestionService
 ) {
 
     @PostMapping
@@ -47,15 +46,9 @@ class QuestionController(
             description = "题目信息",
             required = true
         )
-        @Valid @RequestBody request: QuestionRequest
+        @Valid @RequestBody request: QuestionRequest,
+        @CurrentUser user: User
     ): Result<QuestionResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         if (user.role != "teacher" && user.role != "admin") {
             return Result.error("只有教师和管理员可以创建题目", 403)
         }
@@ -84,15 +77,9 @@ class QuestionController(
         @Parameter(description = "难度等级", schema = Schema(allowableValues = ["easy", "medium", "hard"]))
         @RequestParam(required = false) difficulty: String?,
         @Parameter(description = "分类")
-        @RequestParam(required = false) category: String?
+        @RequestParam(required = false) category: String?,
+        @CurrentUser user: User
     ): Result<Page<QuestionResponse>> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         val pageable = PageRequest.of(page, size.coerceAtMost(100))
         val creatorId = if (user.role == "admin") null else user.id
         val questions = questionService.searchQuestions(
@@ -112,15 +99,9 @@ class QuestionController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun getQuestionById(
-        @Parameter(description = "题目ID") @PathVariable id: Long
+        @Parameter(description = "题目ID") @PathVariable id: Long,
+        @CurrentUser user: User
     ): Result<QuestionResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             val question = questionService.getQuestionById(id)
             // Students must not see answer or analysis
@@ -141,15 +122,9 @@ class QuestionController(
     )
     fun updateQuestion(
         @Parameter(description = "题目ID") @PathVariable id: Long,
-        @Valid @RequestBody request: QuestionRequest
+        @Valid @RequestBody request: QuestionRequest,
+        @CurrentUser user: User
     ): Result<QuestionResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             val question = questionService.updateQuestion(id, request, user.safeId, user.role)
             Result.success(question, "题目更新成功")
@@ -165,15 +140,9 @@ class QuestionController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun deleteQuestion(
-        @Parameter(description = "题目ID") @PathVariable id: Long
+        @Parameter(description = "题目ID") @PathVariable id: Long,
+        @CurrentUser user: User
     ): Result<String> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             questionService.deleteQuestion(id, user.safeId, user.role)
             Result.success("题目删除成功")

@@ -4,13 +4,19 @@ import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
+import jakarta.validation.Valid
+import ovo.sypw.onlineexamsystemback.dto.request.ExamScoreExportRequest
 import ovo.sypw.onlineexamsystemback.dto.response.*
+import ovo.sypw.onlineexamsystemback.entity.User
 import ovo.sypw.onlineexamsystemback.repository.ExamRepository
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
+import ovo.sypw.onlineexamsystemback.security.CurrentUser
 import ovo.sypw.onlineexamsystemback.service.StatisticsService
 import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
-import org.springframework.security.core.context.SecurityContextHolder
+import org.springframework.http.HttpHeaders
+import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 
 @RestController
@@ -42,15 +48,9 @@ class StatisticsController(
     )
     fun getExamStatistics(
         @Parameter(description = "考试ID", example = "1")
-        @PathVariable examId: Long
+        @PathVariable examId: Long,
+        @CurrentUser user: User
     ): Result<ExamStatisticsResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         // Check permission
         if (user.role == "teacher") {
             val exam = examRepository.findById(examId).orElse(null)
@@ -91,15 +91,9 @@ class StatisticsController(
     )
     fun getCourseStatistics(
         @Parameter(description = "课程ID", example = "1")
-        @PathVariable courseId: Long
+        @PathVariable courseId: Long,
+        @CurrentUser user: User
     ): Result<CourseStatisticsResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         // Only teacher and admin can view
         if (user.role != "teacher" && user.role != "admin") {
             return Result.error("只有教师和管理员可以查看统计数据", 403)
@@ -132,15 +126,9 @@ class StatisticsController(
     )
     fun getQuestionStatistics(
         @Parameter(description = "题目ID", example = "1")
-        @PathVariable questionId: Long
+        @PathVariable questionId: Long,
+        @CurrentUser user: User
     ): Result<QuestionStatisticsResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         // Only teacher and admin can view
         if (user.role != "teacher" && user.role != "admin") {
             return Result.error("只有教师和管理员可以查看统计数据", 403)
@@ -174,15 +162,9 @@ class StatisticsController(
     )
     fun getStudentStatistics(
         @Parameter(description = "学生ID", example = "1")
-        @PathVariable studentId: Long
+        @PathVariable studentId: Long,
+        @CurrentUser user: User
     ): Result<StudentStatisticsResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         // Students can only view their own statistics
         if (user.role == "student" && user.id != studentId) {
             return Result.error("您只能查看自己的成绩统计", 403)
@@ -214,14 +196,9 @@ class StatisticsController(
         """,
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
-    fun getSystemOverview(): Result<SystemOverviewResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
+    fun getSystemOverview(
+        @CurrentUser user: User
+    ): Result<SystemOverviewResponse> {
         // Only admin can view system overview
         if (user.role != "admin") {
             return Result.error("只有管理员可以查看系统总览", 403)
@@ -232,6 +209,51 @@ class StatisticsController(
             Result.success(overview)
         } catch (e: Exception) {
             Result.error(e.message ?: "获取系统总览失败", 400)
+        }
+    }
+
+    @PostMapping("/exam/{examId}/export")
+    @Operation(
+        summary = "导出考试成绩",
+        description = """
+            导出某场考试的学生成绩为 Excel 文件
+            
+            ## 权限
+            - 教师可以导出自己的考试
+            - 管理员可以导出任何考试
+            
+            ## 自定义字段
+            - 学号、姓名、得分、提交时间、状态
+            - 切出次数、监考异常标记
+        """,
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
+    fun exportExamScores(
+        @CurrentUser user: User,
+        @Parameter(description = "考试ID", example = "1") @PathVariable examId: Long,
+        @Valid @RequestBody config: ExamScoreExportRequest
+    ): ResponseEntity<ByteArray> {
+        // Permission check
+        val exam = examRepository.findById(examId).orElse(null)
+            ?: return ResponseEntity.status(404).body("考试不存在".toByteArray())
+
+        if (user.role != "admin" && exam.creatorId != user.id) {
+            return ResponseEntity.status(403).body("您没有权限导出此考试的成绩".toByteArray())
+        }
+
+        return try {
+            val excelBytes = statisticsService.exportExamScores(examId, config)
+            val headers = HttpHeaders().apply {
+                contentType = MediaType.APPLICATION_OCTET_STREAM
+                setContentDispositionFormData("attachment", "scores_exam_${examId}.xlsx")
+            }
+            ResponseEntity.ok()
+                .headers(headers)
+                .body(excelBytes)
+        } catch (e: IllegalArgumentException) {
+            ResponseEntity.status(400).body((e.message ?: "导出失败").toByteArray())
+        } catch (e: Exception) {
+            ResponseEntity.status(500).body("导出失败: ${e.message}".toByteArray())
         }
     }
 }

@@ -1,5 +1,6 @@
 package ovo.sypw.onlineexamsystemback.service
 
+import ovo.sypw.onlineexamsystemback.dto.request.ExamScoreExportRequest
 import ovo.sypw.onlineexamsystemback.dto.response.*
 
 interface StatisticsService {
@@ -36,4 +37,12 @@ interface StatisticsService {
      * @return System-wide statistics
      */
     fun getSystemOverview(): SystemOverviewResponse
+
+    /**
+     * Export exam scores to Excel
+     * @param examId Exam ID
+     * @param config Export field configuration
+     * @return Excel file bytes
+     */
+    fun exportExamScores(examId: Long, config: ExamScoreExportRequest): ByteArray
 }

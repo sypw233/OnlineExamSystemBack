@@ -11,15 +11,15 @@ import ovo.sypw.onlineexamsystemback.dto.request.ExamRequest
 import ovo.sypw.onlineexamsystemback.dto.response.ExamQuestionResponse
 import ovo.sypw.onlineexamsystemback.dto.response.ExamResponse
 import ovo.sypw.onlineexamsystemback.dto.response.SubmissionResponse
+import ovo.sypw.onlineexamsystemback.entity.User
 import ovo.sypw.onlineexamsystemback.repository.CourseRepository
-import ovo.sypw.onlineexamsystemback.repository.UserRepository
+import ovo.sypw.onlineexamsystemback.security.CurrentUser
 import ovo.sypw.onlineexamsystemback.service.ExamService
 import ovo.sypw.onlineexamsystemback.service.SubmissionService
 import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
-import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.*
 
 @RestController
@@ -28,7 +28,6 @@ import org.springframework.web.bind.annotation.*
 class ExamController(
     private val examService: ExamService,
     private val submissionService: SubmissionService,
-    private val userRepository: UserRepository,
     private val courseRepository: CourseRepository
 ) {
 
@@ -47,19 +46,13 @@ class ExamController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun createExam(
+        @CurrentUser user: User,
         @io.swagger.v3.oas.annotations.parameters.RequestBody(
             description = "考试信息",
             required = true
         )
         @Valid @RequestBody request: ExamRequest
     ): Result<ExamResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         if (user.role != "teacher" && user.role != "admin") {
             return Result.error("只有教师和管理员可以创建考试", 403)
         }
@@ -79,6 +72,7 @@ class ExamController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun getAllExams(
+        @CurrentUser user: User,
         @Parameter(description = "页码", example = "0")
         @RequestParam(defaultValue = "0") page: Int,
         @Parameter(description = "每页条数", example = "20")
@@ -88,13 +82,6 @@ class ExamController(
         @Parameter(description = "课程ID")
         @RequestParam(required = false) courseId: Long?
     ): Result<Page<ExamResponse>> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         val pageable = PageRequest.of(page, size.coerceAtMost(100))
 
         // If teacher, limit by their teaching courses
@@ -136,15 +123,9 @@ class ExamController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun getExamById(
+        @CurrentUser user: User,
         @Parameter(description = "考试ID", example = "1") @PathVariable id: Long
     ): Result<ExamResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             val exam = examService.getExamById(id)
             Result.success(exam)
@@ -160,16 +141,10 @@ class ExamController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun updateExam(
+        @CurrentUser user: User,
         @Parameter(description = "考试ID", example = "1") @PathVariable id: Long,
         @Valid @RequestBody request: ExamRequest
     ): Result<ExamResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             val exam = examService.updateExam(id, request, user.safeId, user.role)
             Result.success(exam, "考试更新成功")
@@ -185,15 +160,9 @@ class ExamController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun deleteExam(
+        @CurrentUser user: User,
         @Parameter(description = "考试ID", example = "1") @PathVariable id: Long
     ): Result<String> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             examService.deleteExam(id, user.safeId, user.role)
             Result.success("考试删除成功")
@@ -209,17 +178,11 @@ class ExamController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun patchExam(
+        @CurrentUser user: User,
         @Parameter(description = "考试ID", example = "1") @PathVariable id: Long,
         @Parameter(description = "状态: 1=发布", schema = Schema(allowableValues = ["1"]))
         @RequestParam status: Int
     ): Result<ExamResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             val exam = examService.patchExam(id, status, user.safeId, user.role)
             Result.success(exam, "考试更新成功")
@@ -235,15 +198,9 @@ class ExamController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun startExam(
+        @CurrentUser user: User,
         @Parameter(description = "考试ID", example = "1") @PathVariable id: Long
     ): Result<SubmissionResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         if (user.role != "student") {
             return Result.error("只有学生可以开始考试", 403)
         }
@@ -269,16 +226,10 @@ class ExamController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun addQuestionToExam(
+        @CurrentUser user: User,
         @Parameter(description = "考试ID", example = "1") @PathVariable id: Long,
         @Valid @RequestBody request: ExamQuestionRequest
     ): Result<String> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             examService.addQuestionToExam(id, request, user.safeId, user.role)
             Result.success("题目添加成功")
@@ -294,16 +245,10 @@ class ExamController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun removeQuestionFromExam(
+        @CurrentUser user: User,
         @Parameter(description = "考试ID", example = "1") @PathVariable id: Long,
         @Parameter(description = "题目ID", example = "1") @PathVariable questionId: Long
     ): Result<String> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             examService.removeQuestionFromExam(id, questionId, user.safeId, user.role)
             Result.success("题目移除成功")
@@ -319,15 +264,9 @@ class ExamController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun getExamQuestions(
+        @CurrentUser user: User,
         @Parameter(description = "考试ID", example = "1") @PathVariable id: Long
     ): Result<List<ExamQuestionResponse>> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         if (user.role != "teacher" && user.role != "admin") {
             return Result.error("只有教师和管理员可以查看考试题目", 403)
         }
@@ -338,5 +277,45 @@ class ExamController(
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "查询失败", 400)
         }
+    }
+
+    @GetMapping("/my-available")
+    @Operation(
+        summary = "获取待考考试列表",
+        description = "学生获取当前可以参加的考试列表（已发布、时间有效、尚未提交）",
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
+    fun getMyAvailableExams(
+        @CurrentUser user: User,
+        @Parameter(description = "页码", example = "0") @RequestParam(defaultValue = "0") page: Int,
+        @Parameter(description = "每页条数", example = "20") @RequestParam(defaultValue = "20") size: Int
+    ): Result<Page<ExamResponse>> {
+        if (user.role != "student") {
+            return Result.error("只有学生可以查看待考列表", 403)
+        }
+
+        val pageable = PageRequest.of(page, size.coerceAtMost(100))
+        val exams = examService.getStudentAvailableExams(user.safeId, pageable)
+        return Result.success(exams)
+    }
+
+    @GetMapping("/my-completed")
+    @Operation(
+        summary = "获取已考/已结束考试列表",
+        description = "学生获取已提交或已结束的考试列表",
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
+    fun getMyCompletedExams(
+        @CurrentUser user: User,
+        @Parameter(description = "页码", example = "0") @RequestParam(defaultValue = "0") page: Int,
+        @Parameter(description = "每页条数", example = "20") @RequestParam(defaultValue = "20") size: Int
+    ): Result<Page<ExamResponse>> {
+        if (user.role != "student") {
+            return Result.error("只有学生可以查看已考列表", 403)
+        }
+
+        val pageable = PageRequest.of(page, size.coerceAtMost(100))
+        val exams = examService.getStudentCompletedExams(user.safeId, pageable)
+        return Result.success(exams)
     }
 }

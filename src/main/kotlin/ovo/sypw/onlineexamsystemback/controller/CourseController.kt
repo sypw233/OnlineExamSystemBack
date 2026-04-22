@@ -8,13 +8,15 @@ import jakarta.validation.Valid
 import ovo.sypw.onlineexamsystemback.dto.request.CourseRequest
 import ovo.sypw.onlineexamsystemback.dto.response.CourseResponse
 import ovo.sypw.onlineexamsystemback.dto.response.EnrollmentResponse
-import ovo.sypw.onlineexamsystemback.repository.UserRepository
+import ovo.sypw.onlineexamsystemback.dto.response.ExamResponse
+import ovo.sypw.onlineexamsystemback.entity.User
+import ovo.sypw.onlineexamsystemback.security.CurrentUser
 import ovo.sypw.onlineexamsystemback.service.CourseService
+import ovo.sypw.onlineexamsystemback.service.ExamService
 import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
-import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.*
 
 @RestController
@@ -22,7 +24,7 @@ import org.springframework.web.bind.annotation.*
 @Tag(name = "课程管理", description = "课程相关接口")
 class CourseController(
     private val courseService: CourseService,
-    private val userRepository: UserRepository
+    private val examService: ExamService
 ) {
 
     @PostMapping
@@ -31,14 +33,10 @@ class CourseController(
         description = "教师和管理员创建新课程",
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
-    fun createCourse(@Valid @RequestBody courseRequest: CourseRequest): Result<CourseResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
+    fun createCourse(
+        @Valid @RequestBody courseRequest: CourseRequest,
+        @CurrentUser user: User
+    ): Result<CourseResponse> {
         if (user.role != "teacher" && user.role != "admin") {
             return Result.error("只有教师和管理员可以创建课程", 403)
         }
@@ -55,15 +53,9 @@ class CourseController(
     )
     fun getAllActiveCourses(
         @Parameter(description = "页码", example = "0") @RequestParam(defaultValue = "0") page: Int,
-        @Parameter(description = "每页条数", example = "20") @RequestParam(defaultValue = "20") size: Int
+        @Parameter(description = "每页条数", example = "20") @RequestParam(defaultValue = "20") size: Int,
+        @CurrentUser user: User
     ): Result<Page<CourseResponse>> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         val pageable = PageRequest.of(page, size.coerceAtMost(100))
         val courses = courseService.getAllActiveCourses(pageable)
         return Result.success(courses)
@@ -76,15 +68,9 @@ class CourseController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun getCourseById(
-        @Parameter(description = "课程ID") @PathVariable id: Long
+        @Parameter(description = "课程ID") @PathVariable id: Long,
+        @CurrentUser user: User
     ): Result<CourseResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             val course = courseService.getCourseById(id)
             Result.success(course)
@@ -101,15 +87,9 @@ class CourseController(
     )
     fun updateCourse(
         @Parameter(description = "课程ID") @PathVariable id: Long,
-        @Valid @RequestBody courseRequest: CourseRequest
+        @Valid @RequestBody courseRequest: CourseRequest,
+        @CurrentUser user: User
     ): Result<CourseResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             val course = courseService.updateCourse(id, courseRequest, user.safeId, user.role)
             Result.success(course, "课程更新成功")
@@ -125,15 +105,9 @@ class CourseController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun deleteCourse(
-        @Parameter(description = "课程ID") @PathVariable id: Long
+        @Parameter(description = "课程ID") @PathVariable id: Long,
+        @CurrentUser user: User
     ): Result<String> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             courseService.deleteCourse(id, user.safeId, user.role)
             Result.success("课程删除成功")
@@ -149,15 +123,9 @@ class CourseController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun enrollCourse(
-        @Parameter(description = "课程ID") @PathVariable id: Long
+        @Parameter(description = "课程ID") @PathVariable id: Long,
+        @CurrentUser user: User
     ): Result<EnrollmentResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         if (user.role != "student") {
             return Result.error("只有学生可以选课", 403)
         }
@@ -176,14 +144,9 @@ class CourseController(
         description = "教师获取自己创建的课程，学生获取已选课程",
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
-    fun getMyCourses(): Result<List<CourseResponse>> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
+    fun getMyCourses(
+        @CurrentUser user: User
+    ): Result<List<CourseResponse>> {
         val courses = courseService.getMyCourses(user.safeId, user.role)
         return Result.success(courses)
     }
@@ -195,15 +158,9 @@ class CourseController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun getEnrolledStudents(
-        @Parameter(description = "课程ID") @PathVariable id: Long
+        @Parameter(description = "课程ID") @PathVariable id: Long,
+        @CurrentUser user: User
     ): Result<List<EnrollmentResponse>> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         if (user.role != "teacher" && user.role != "admin") {
             return Result.error("只有教师和管理员可以查看选课情况", 403)
         }
@@ -222,14 +179,9 @@ class CourseController(
         description = "学生查看自己的所有选课记录",
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
-    fun getMyEnrollments(): Result<List<EnrollmentResponse>> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
+    fun getMyEnrollments(
+        @CurrentUser user: User
+    ): Result<List<EnrollmentResponse>> {
         if (user.role != "student") {
             return Result.error("只有学生可以查看选课记录", 403)
         }
@@ -246,15 +198,9 @@ class CourseController(
     )
     fun addStudentToCourse(
         @Parameter(description = "课程ID") @PathVariable id: Long,
-        @Parameter(description = "学生ID") @PathVariable studentId: Long
+        @Parameter(description = "学生ID") @PathVariable studentId: Long,
+        @CurrentUser user: User
     ): Result<EnrollmentResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         if (user.role != "teacher" && user.role != "admin") {
             return Result.error("只有教师和管理员可以添加学生", 403)
         }
@@ -275,15 +221,9 @@ class CourseController(
     )
     fun batchAddStudentsToCourse(
         @Parameter(description = "课程ID") @PathVariable id: Long,
-        @RequestBody studentIds: List<Long>
+        @RequestBody studentIds: List<Long>,
+        @CurrentUser user: User
     ): Result<List<EnrollmentResponse>> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         if (user.role != "teacher" && user.role != "admin") {
             return Result.error("只有教师和管理员可以添加学生", 403)
         }
@@ -319,20 +259,35 @@ class CourseController(
     )
     fun removeStudentFromCourse(
         @Parameter(description = "课程ID") @PathVariable id: Long,
-        @Parameter(description = "学生ID") @PathVariable studentId: Long
+        @Parameter(description = "学生ID") @PathVariable studentId: Long,
+        @CurrentUser user: User
     ): Result<String> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             courseService.removeStudentFromCourse(id, studentId, user.safeId, user.role)
             Result.success("移除成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "移除失败", 400)
+        }
+    }
+
+    @GetMapping("/{id}/exams")
+    @Operation(
+        summary = "获取课程下的考试列表",
+        description = "获取指定课程下的所有考试，支持分页",
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
+    fun getCourseExams(
+        @Parameter(description = "课程ID") @PathVariable id: Long,
+        @Parameter(description = "页码", example = "0") @RequestParam(defaultValue = "0") page: Int,
+        @Parameter(description = "每页条数", example = "20") @RequestParam(defaultValue = "20") size: Int,
+        @CurrentUser user: User
+    ): Result<Page<ExamResponse>> {
+        val pageable = PageRequest.of(page, size.coerceAtMost(100))
+        return try {
+            val exams = examService.getExamsByCourse(id, pageable)
+            Result.success(exams)
+        } catch (e: IllegalArgumentException) {
+            Result.error(e.message ?: "查询失败", 400)
         }
     }
 }

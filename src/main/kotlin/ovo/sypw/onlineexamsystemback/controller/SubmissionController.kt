@@ -10,21 +10,20 @@ import ovo.sypw.onlineexamsystemback.dto.request.GradeRequest
 import ovo.sypw.onlineexamsystemback.dto.request.ProctoringEventRequest
 import ovo.sypw.onlineexamsystemback.dto.request.SubmissionRequest
 import ovo.sypw.onlineexamsystemback.dto.response.SubmissionResponse
-import ovo.sypw.onlineexamsystemback.repository.UserRepository
+import ovo.sypw.onlineexamsystemback.entity.User
+import ovo.sypw.onlineexamsystemback.security.CurrentUser
 import ovo.sypw.onlineexamsystemback.service.SubmissionService
 import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
-import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.*
 
 @RestController
 @RequestMapping("/api/submissions")
 @Tag(name = "考试提交管理", description = "考试监考提交和评分相关接口")
 class SubmissionController(
-    private val submissionService: SubmissionService,
-    private val userRepository: UserRepository
+    private val submissionService: SubmissionService
 ) {
 
     @PostMapping
@@ -66,19 +65,13 @@ class SubmissionController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun submitExam(
+        @CurrentUser user: User,
         @io.swagger.v3.oas.annotations.parameters.RequestBody(
             description = "考试答案数据",
             required = true
         )
         @Valid @RequestBody request: SubmissionRequest
     ): Result<SubmissionResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             val submission = submissionService.submitExam(request, user.safeId)
             Result.success(submission, "提交成功")
@@ -94,15 +87,9 @@ class SubmissionController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun getSubmissionById(
+        @CurrentUser user: User,
         @Parameter(description = "提交ID", example = "1") @PathVariable id: Long
     ): Result<SubmissionResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             val submission = submissionService.getSubmissionById(id, user.safeId, user.role)
             Result.success(submission)
@@ -118,18 +105,12 @@ class SubmissionController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun getSubmissions(
+        @CurrentUser user: User,
         @Parameter(description = "考试ID") @RequestParam(required = false) examId: Long?,
         @Parameter(description = "用户ID") @RequestParam(required = false) userId: Long?,
         @Parameter(description = "页码", example = "0") @RequestParam(defaultValue = "0") page: Int,
         @Parameter(description = "每页条数", example = "20") @RequestParam(defaultValue = "20") size: Int
     ): Result<Page<SubmissionResponse>> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         val pageable = PageRequest.of(page, size.coerceAtMost(100))
 
         // Student can only view their own
@@ -187,16 +168,10 @@ class SubmissionController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun gradeSubmission(
+        @CurrentUser user: User,
         @Parameter(description = "提交ID", example = "1") @PathVariable id: Long,
         @Valid @RequestBody request: GradeRequest
     ): Result<SubmissionResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         if (user.role != "teacher" && user.role != "admin") {
             return Result.error("只有教师和管理员可以评分", 403)
         }
@@ -241,19 +216,13 @@ class SubmissionController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun recordProctoringEvent(
+        @CurrentUser user: User,
         @io.swagger.v3.oas.annotations.parameters.RequestBody(
             description = "监考事件数据",
             required = true
         )
         @Valid @RequestBody request: ProctoringEventRequest
     ): Result<Map<String, Any>> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         return try {
             val autoSubmitted = submissionService.recordProctoringEvent(request, user.safeId)
             Result.success(
@@ -265,6 +234,36 @@ class SubmissionController(
             )
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "记录失败", 400)
+        }
+    }
+
+    @GetMapping("/{id}/proctoring")
+    @Operation(
+        summary = "获取监考记录",
+        description = """
+            获取某次考试提交的监考详情
+            
+            ## 权限
+            - 学生只能查看自己的监考记录
+            - 教师可以查看自己考试的监考记录
+            - 管理员可以查看任何监考记录
+            
+            ## 返回数据
+            - switchCount: 切出次数
+            - proctoringData: 详细监考事件列表
+            - status: 提交状态
+        """,
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
+    fun getProctoringData(
+        @CurrentUser user: User,
+        @Parameter(description = "提交ID", example = "1") @PathVariable id: Long
+    ): Result<Map<String, Any>> {
+        return try {
+            val data = submissionService.getProctoringData(id, user.safeId, user.role)
+            Result.success(data)
+        } catch (e: IllegalArgumentException) {
+            Result.error(e.message ?: "查询失败", 400)
         }
     }
 }

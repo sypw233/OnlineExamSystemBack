@@ -9,19 +9,18 @@ import ovo.sypw.onlineexamsystemback.dto.request.AiConfigRequest
 import ovo.sypw.onlineexamsystemback.dto.request.AiGradingRequest
 import ovo.sypw.onlineexamsystemback.dto.response.AiConfigResponse
 import ovo.sypw.onlineexamsystemback.dto.response.AiGradingResponse
-import ovo.sypw.onlineexamsystemback.repository.UserRepository
+import ovo.sypw.onlineexamsystemback.entity.User
+import ovo.sypw.onlineexamsystemback.security.CurrentUser
 import ovo.sypw.onlineexamsystemback.service.AiGradingService
 import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
-import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.*
 
 @RestController
 @RequestMapping("/api/ai-grading")
 @Tag(name = "AI辅助判题", description = "使用AI大模型辅助批改主观题")
 class AiGradingController(
-    private val aiGradingService: AiGradingService,
-    private val userRepository: UserRepository
+    private val aiGradingService: AiGradingService
 ) {
 
     @PostMapping("/grade")
@@ -59,19 +58,13 @@ class AiGradingController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun gradeWithAI(
+        @CurrentUser user: User,
         @io.swagger.v3.oas.annotations.parameters.RequestBody(
             description = "AI判题请求",
             required = true
         )
         @Valid @RequestBody request: AiGradingRequest
     ): Result<AiGradingResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         // Only teacher and admin can use AI grading
         if (user.role != "teacher" && user.role != "admin") {
             return Result.error("只有教师和管理员可以使用AI辅助判题", 403)
@@ -106,14 +99,9 @@ class AiGradingController(
         """,
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
-    fun getAllConfigs(): Result<List<AiConfigResponse>> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
+    fun getAllConfigs(
+        @CurrentUser user: User
+    ): Result<List<AiConfigResponse>> {
         // Only admin can view configs
         if (user.role != "admin") {
             return Result.error("只有管理员可以查看AI配置", 403)
@@ -153,19 +141,13 @@ class AiGradingController(
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun updateConfig(
+        @CurrentUser user: User,
         @io.swagger.v3.oas.annotations.parameters.RequestBody(
             description = "配置更新请求",
             required = true
         )
         @Valid @RequestBody request: AiConfigRequest
     ): Result<AiConfigResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
         // Only admin can update configs
         if (user.role != "admin") {
             return Result.error("只有管理员可以修改AI配置", 403)
