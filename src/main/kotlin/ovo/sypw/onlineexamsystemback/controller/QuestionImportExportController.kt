@@ -10,6 +10,9 @@ import ovo.sypw.onlineexamsystemback.security.CurrentUser
 import ovo.sypw.onlineexamsystemback.service.QuestionImportExportService
 import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
+import org.springframework.http.HttpHeaders
+import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.multipart.MultipartFile
 
@@ -92,7 +95,7 @@ class QuestionImportExportController(
             ## 功能说明
             - 导出指定题库的全部题目
             - Excel格式，包含所有题目信息
-            - 返回文件下载URL
+            - 浏览器直接下载
             
             ## 权限
             - 仅教师和管理员可导出
@@ -103,18 +106,25 @@ class QuestionImportExportController(
         @CurrentUser user: User,
         @Parameter(description = "题库ID", example = "1", required = true)
         @RequestParam("bankId") bankId: Long
-    ): Result<String> {
+    ): ResponseEntity<ByteArray> {
         if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以导出题库", 403)
+            return ResponseEntity.status(403)
+                .body("只有教师和管理员可以导出题库".toByteArray())
         }
 
         return try {
-            val url = questionImportExportService.exportQuestionsToExcel(bankId, user.safeId)
-            Result.success(url, "导出成功")
+            val (bytes, filename) = questionImportExportService.exportQuestionsToExcel(bankId, user.safeId)
+            val headers = HttpHeaders().apply {
+                contentType = MediaType.APPLICATION_OCTET_STREAM
+                setContentDispositionFormData("attachment", filename)
+            }
+            ResponseEntity.ok()
+                .headers(headers)
+                .body(bytes)
         } catch (e: IllegalArgumentException) {
-            Result.error(e.message ?: "导出失败", 400)
+            ResponseEntity.status(400).body((e.message ?: "导出失败").toByteArray())
         } catch (e: Exception) {
-            Result.error("导出失败: ${e.message}", 500)
+            ResponseEntity.status(500).body("导出失败: ${e.message}".toByteArray())
         }
     }
 
@@ -127,7 +137,7 @@ class QuestionImportExportController(
             ## 功能说明
             - 下载预设格式的Excel模板
             - 包含示例数据
-            - 返回文件下载URL
+            - 浏览器直接下载
             
             ## 权限
             - 所有教师和管理员可下载
@@ -136,16 +146,23 @@ class QuestionImportExportController(
     )
     fun downloadTemplate(
         @CurrentUser user: User
-    ): Result<String> {
+    ): ResponseEntity<ByteArray> {
         if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以下载模板", 403)
+            return ResponseEntity.status(403)
+                .body("只有教师和管理员可以下载模板".toByteArray())
         }
 
         return try {
-            val url = questionImportExportService.downloadImportTemplate(user.safeId)
-            Result.success(url, "模板生成成功")
+            val (bytes, filename) = questionImportExportService.downloadImportTemplate(user.safeId)
+            val headers = HttpHeaders().apply {
+                contentType = MediaType.APPLICATION_OCTET_STREAM
+                setContentDispositionFormData("attachment", filename)
+            }
+            ResponseEntity.ok()
+                .headers(headers)
+                .body(bytes)
         } catch (e: Exception) {
-            Result.error("模板生成失败: ${e.message}", 500)
+            ResponseEntity.status(500).body("模板生成失败: ${e.message}".toByteArray())
         }
     }
 }

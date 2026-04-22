@@ -18,17 +18,17 @@ interface QuestionImportExportService {
     ): ImportResultResponse
 
     /**
-     * Export questions to Excel file and upload to BOS
+     * Export questions to Excel file
      * @param bankId Question bank ID to export from
      * @param userId Exporter user ID
-     * @return Download URL of the exported Excel file
+     * @return Excel file bytes and filename
      */
-    fun exportQuestionsToExcel(bankId: Long, userId: Long): String
+    fun exportQuestionsToExcel(bankId: Long, userId: Long): Pair<ByteArray, String>
 
     /**
-     * Generate import template and upload to BOS
+     * Generate import template
      * @param userId Downloader user ID
-     * @return Download URL of the template file
+     * @return Excel file bytes and filename
      */
-    fun downloadImportTemplate(userId: Long): String
+    fun downloadImportTemplate(userId: Long): Pair<ByteArray, String>
 }

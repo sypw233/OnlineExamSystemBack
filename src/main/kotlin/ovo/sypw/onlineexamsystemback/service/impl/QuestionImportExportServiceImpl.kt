@@ -13,7 +13,6 @@ import ovo.sypw.onlineexamsystemback.entity.QuestionBankQuestion
 import ovo.sypw.onlineexamsystemback.repository.QuestionBankQuestionRepository
 import ovo.sypw.onlineexamsystemback.repository.QuestionBankRepository
 import ovo.sypw.onlineexamsystemback.repository.QuestionRepository
-import ovo.sypw.onlineexamsystemback.service.FileService
 import ovo.sypw.onlineexamsystemback.service.QuestionImportExportService
 import java.io.ByteArrayOutputStream
 import java.time.LocalDate
@@ -26,8 +25,7 @@ class QuestionImportExportServiceImpl(
     private val questionRepository: QuestionRepository,
     private val questionBankRepository: QuestionBankRepository,
     private val questionBankQuestionRepository: QuestionBankQuestionRepository,
-    private val objectMapper: ObjectMapper,
-    private val fileService: FileService
+    private val objectMapper: ObjectMapper
 ) : QuestionImportExportService {
 
     companion object {
@@ -187,7 +185,7 @@ class QuestionImportExportServiceImpl(
         }
     }
 
-    override fun exportQuestionsToExcel(bankId: Long, userId: Long): String {
+    override fun exportQuestionsToExcel(bankId: Long, userId: Long): Pair<ByteArray, String> {
         val bank = questionBankRepository.findById(bankId).orElseThrow {
             throw IllegalArgumentException("题库不存在")
         }
@@ -243,12 +241,11 @@ class QuestionImportExportServiceImpl(
         workbook.close()
 
         val date = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"))
-        val fileKey = "exports/questions/${bank.name}_${date}_${UUID.randomUUID()}.xlsx"
-        val response = fileService.uploadBytes(outputStream.toByteArray(), fileKey, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        return response.fileUrl
+        val filename = "${bank.name}_${date}.xlsx"
+        return Pair(outputStream.toByteArray(), filename)
     }
 
-    override fun downloadImportTemplate(userId: Long): String {
+    override fun downloadImportTemplate(userId: Long): Pair<ByteArray, String> {
         val workbook = XSSFWorkbook()
         val sheet = workbook.createSheet("题目导入模板")
 
@@ -294,8 +291,6 @@ class QuestionImportExportServiceImpl(
         workbook.write(outputStream)
         workbook.close()
 
-        val fileKey = "templates/question_import_template.xlsx"
-        val response = fileService.uploadBytes(outputStream.toByteArray(), fileKey, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        return response.fileUrl
+        return Pair(outputStream.toByteArray(), "question_import_template.xlsx")
     }
 }

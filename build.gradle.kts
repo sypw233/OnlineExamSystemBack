@@ -64,6 +64,12 @@ tasks.jacocoTestReport {
     }
 }
 
+configurations.all {
+    resolutionStrategy {
+        force("commons-io:commons-io:2.15.1")
+    }
+}
+
 kotlin {
     compilerOptions {
         freeCompilerArgs.addAll("-Xjsr305=strict", "-Xannotation-default-target=param-property")
