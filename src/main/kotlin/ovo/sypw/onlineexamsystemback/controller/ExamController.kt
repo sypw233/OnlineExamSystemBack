@@ -336,4 +336,37 @@ class ExamController(
         val exams = examService.getStudentCompletedExams(user.safeId, pageable)
         return Result.success(exams)
     }
+
+    @GetMapping("/{id}/paper")
+    @Operation(
+        summary = "获取考试试卷（学生）",
+        description = """
+            学生获取考试试卷题目列表（不含答案和解析）
+            
+            ## 权限与限制
+            - 仅学生可访问
+            - 考试必须已发布且在当前时间内
+            - 学生必须已选修该课程
+            
+            ## 返回数据
+            - 包含题目内容、类型、难度、选项、分值和顺序
+            - 不含标准答案和解析
+        """,
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
+    fun getExamPaper(
+        @CurrentUser user: User,
+        @Parameter(description = "考试ID", example = "1") @PathVariable id: Long
+    ): Result<List<ovo.sypw.onlineexamsystemback.dto.response.ExamPaperQuestionResponse>> {
+        if (user.role != "student") {
+            return Result.error("只有学生可以获取考试试卷", 403)
+        }
+
+        return try {
+            val questions = examService.getExamPaper(id, user.safeId)
+            Result.success(questions)
+        } catch (e: IllegalArgumentException) {
+            Result.error(e.message ?: "获取试卷失败", 400)
+        }
+    }
 }

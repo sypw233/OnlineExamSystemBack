@@ -553,6 +553,51 @@ class ExamServiceImpl(
         }
     }
 
+    override fun getExamPaper(examId: Long, studentId: Long): List<ExamPaperQuestionResponse> {
+        val exam = examRepository.findById(examId).orElseThrow {
+            throw IllegalArgumentException("考试不存在")
+        }
+
+        // Must be published
+        if (exam.status != 1) {
+            throw IllegalArgumentException("考试未发布或已结束")
+        }
+
+        // Must be within exam time
+        val now = LocalDateTime.now()
+        if (now.isBefore(exam.startTime)) {
+            throw IllegalArgumentException("考试尚未开始")
+        }
+        if (now.isAfter(exam.endTime)) {
+            throw IllegalArgumentException("考试已结束")
+        }
+
+        // Must be enrolled in the course
+        val isEnrolled = courseSelectionRepository.existsByStudentIdAndCourseId(studentId, exam.courseId)
+        if (!isEnrolled) {
+            throw IllegalArgumentException("您未选修该课程，无法参加考试")
+        }
+
+        val examQuestions = examQuestionRepository.findByExamIdOrderBySequence(examId)
+        val questionIds = examQuestions.map { it.questionId }
+        val questions = questionRepository.findAllById(questionIds).associateBy { it.id }
+
+        return examQuestions.mapNotNull { eq ->
+            questions[eq.questionId]?.let { q ->
+                ExamPaperQuestionResponse(
+                    examId = eq.examId,
+                    questionId = eq.questionId,
+                    questionContent = q.content,
+                    questionType = q.type,
+                    questionDifficulty = q.difficulty,
+                    options = q.options,
+                    score = eq.score,
+                    sequence = eq.sequence
+                )
+            }
+        }
+    }
+
     override fun batchDelete(ids: List<Long>, userId: Long, userRole: String): BatchDeleteResult {
         val successIds = mutableListOf<Long>()
         val failedDetails = mutableListOf<FailedDetail>()

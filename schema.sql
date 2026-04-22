@@ -7,6 +7,8 @@ DROP TABLE IF EXISTS question_banks;
 DROP TABLE IF EXISTS course_selections;
 DROP TABLE IF EXISTS courses;
 DROP TABLE IF EXISTS questions;
+DROP TABLE IF EXISTS notifications;
+DROP TABLE IF EXISTS ai_config;
 DROP TABLE IF EXISTS users;
 
 -- 1. Users Table
@@ -25,6 +27,8 @@ CREATE TABLE users (
 
 COMMENT ON TABLE users IS 'User accounts';
 COMMENT ON COLUMN users.role IS 'admin, teacher, student';
+COMMENT ON COLUMN users.nickname IS '用户昵称';
+COMMENT ON COLUMN users.avatar IS '用户头像URL';
 
 -- 2. Courses Table
 CREATE TABLE courses (
@@ -107,6 +111,10 @@ CREATE TABLE exams (
     total_score INT NOT NULL DEFAULT 100,
     status INT NOT NULL DEFAULT 0,
     needs_grading BOOLEAN NOT NULL DEFAULT FALSE,
+    allowed_platforms VARCHAR(50),
+    strict_mode BOOLEAN NOT NULL DEFAULT FALSE,
+    max_switch_count INTEGER,
+    fullscreen_required BOOLEAN NOT NULL DEFAULT FALSE,
     create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_exams_course FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
     CONSTRAINT fk_exams_creator FOREIGN KEY (creator_id) REFERENCES users(id) ON DELETE CASCADE
@@ -114,6 +122,10 @@ CREATE TABLE exams (
 
 COMMENT ON TABLE exams IS 'Exam definitions';
 COMMENT ON COLUMN exams.status IS '0-Draft, 1-Published, 2-Ended';
+COMMENT ON COLUMN exams.allowed_platforms IS '允许的考试平台: desktop, mobile, both';
+COMMENT ON COLUMN exams.strict_mode IS '是否开启严格监考模式';
+COMMENT ON COLUMN exams.max_switch_count IS '最大允许切出次数（null表示无限制）';
+COMMENT ON COLUMN exams.fullscreen_required IS '是否要求全屏模式（仅桌面端）';
 
 -- 8. Exam Questions Relation Table
 CREATE TABLE exam_questions (
@@ -139,12 +151,50 @@ CREATE TABLE exam_submissions (
     status INT NOT NULL DEFAULT 0,
     start_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     submit_time TIMESTAMP,
+    switch_count INTEGER NOT NULL DEFAULT 0,
+    proctoring_data JSONB,
     CONSTRAINT fk_submission_exam FOREIGN KEY (exam_id) REFERENCES exams(id) ON DELETE CASCADE,
     CONSTRAINT fk_submission_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 COMMENT ON TABLE exam_submissions IS 'Student exam submissions';
 COMMENT ON COLUMN exam_submissions.status IS '0-In Progress, 1-Submitted, 2-Graded';
+COMMENT ON COLUMN exam_submissions.switch_count IS '切出考试页面次数';
+COMMENT ON COLUMN exam_submissions.proctoring_data IS '监考详细数据（JSON格式）';
+
+-- 10. Notifications Table
+CREATE TABLE notifications (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type VARCHAR(50) NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    content TEXT,
+    related_id BIGINT,
+    is_read BOOLEAN DEFAULT false,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_notifications_user_id ON notifications(user_id);
+CREATE INDEX idx_notifications_is_read ON notifications(user_id, is_read);
+CREATE INDEX idx_notifications_create_time ON notifications(user_id, create_time DESC);
+
+COMMENT ON TABLE notifications IS '系统通知表';
+COMMENT ON COLUMN notifications.type IS '通知类型（EXAM_PUBLISHED/EXAM_REMINDER/GRADE_RELEASED/COURSE_UPDATE/SYSTEM_ANNOUNCEMENT）';
+
+-- 11. AI Config Table
+CREATE TABLE ai_config (
+    id BIGSERIAL PRIMARY KEY,
+    config_key VARCHAR(100) NOT NULL UNIQUE,
+    config_value TEXT,
+    description VARCHAR(255),
+    updated_by BIGINT REFERENCES users(id),
+    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_ai_config_key ON ai_config(config_key);
+
+COMMENT ON TABLE ai_config IS 'AI辅助判题配置表';
 
 -- ==========================================
 -- Sample Data
@@ -203,3 +253,31 @@ INSERT INTO exam_questions (exam_id, question_id, score, sequence) VALUES
 -- Exam Submissions
 INSERT INTO exam_submissions (exam_id, user_id, answers, status, start_time) VALUES
 (1, 3, '{"1": "B", "2": "A,B"}', 1, NOW());
+
+-- AI Config Defaults
+INSERT INTO ai_config (config_key, config_value, description) VALUES
+('system_prompt', '你是一个专业的教师助手，负责评估学生的答案。
+
+评分标准：
+1. 准确性：概念是否正确
+2. 完整性：是否涵盖关键点
+3. 清晰度：表述是否清晰
+
+请根据题目、参考答案和学生答案，给出：
+- suggestedScore: 建议分数（0到题目满分之间的整数）
+- explanation: 评分说明（简要解释为什么给这个分数）
+- strengths: 优点列表（数组）
+- improvements: 改进建议列表（数组）
+
+请以JSON格式返回结果，严格按照以下格式：
+{
+  "suggestedScore": 数字,
+  "explanation": "文本",
+  "strengths": ["优点1", "优点2"],
+  "improvements": ["建议1", "建议2"]
+}', 'AI判题系统提示词'),
+('model_name', 'gpt-3.5-turbo', '使用的OpenAI模型'),
+('temperature', '0.3', '模型温度参数（0-2之间，越低越确定）'),
+('max_tokens', '500', '最大响应Token数'),
+('api_base_url', 'https://api.openai.com/v1', 'OpenAI API基础URL'),
+('ai_batch_concurrency', '5', 'AI批量评分并行调用数量（1-10）');

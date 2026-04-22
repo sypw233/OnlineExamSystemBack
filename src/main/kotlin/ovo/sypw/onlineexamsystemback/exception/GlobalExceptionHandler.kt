@@ -62,6 +62,18 @@ class GlobalExceptionHandler {
         return Result.error(ex.errorMessage, ex.errorCode)
     }
 
+    @ExceptionHandler(IllegalArgumentException::class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    fun handleIllegalArgument(ex: IllegalArgumentException): Result<Nothing> {
+        return Result.error(ex.message ?: "请求参数错误", 400)
+    }
+
+    @ExceptionHandler(IllegalStateException::class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    fun handleIllegalState(ex: IllegalStateException): Result<Nothing> {
+        return Result.error(ex.message ?: "状态异常", 400)
+    }
+
     @ExceptionHandler(Exception::class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     fun handleGenericException(ex: Exception): Result<Nothing> {
