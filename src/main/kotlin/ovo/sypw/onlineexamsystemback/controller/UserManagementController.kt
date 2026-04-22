@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
+import ovo.sypw.onlineexamsystemback.dto.request.BatchDeleteRequest
 import ovo.sypw.onlineexamsystemback.dto.request.ResetPasswordRequest
 import ovo.sypw.onlineexamsystemback.dto.request.UserCreateRequest
 import ovo.sypw.onlineexamsystemback.dto.request.UserUpdateRequest
@@ -167,6 +168,23 @@ class UserManagementController(
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "操作失败", 400)
         }
+    }
+
+    @PostMapping("/batch-delete")
+    @Operation(
+        summary = "批量删除用户",
+        description = "管理员批量删除指定用户。删除失败会继续处理后续记录，不会删除当前登录用户。",
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
+    fun batchDeleteUsers(
+        @Valid @RequestBody request: BatchDeleteRequest,
+        @CurrentUser user: User
+    ): Result<ovo.sypw.onlineexamsystemback.dto.response.BatchDeleteResult> {
+        if (user.role != "admin") {
+            return Result.error("权限不足, 仅管理员可以访问此接口", 403)
+        }
+        val result = userManagementService.batchDelete(request.ids, user.safeId)
+        return Result.success(result, "批量删除完成：成功 ${result.successCount} 条，失败 ${result.failedCount} 条")
     }
 
 }

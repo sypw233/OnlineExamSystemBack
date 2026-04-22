@@ -1,7 +1,9 @@
 package ovo.sypw.onlineexamsystemback.service
 
+import ovo.sypw.onlineexamsystemback.dto.request.AiBatchGradingRequest
 import ovo.sypw.onlineexamsystemback.dto.request.AiConfigRequest
 import ovo.sypw.onlineexamsystemback.dto.request.AiGradingRequest
+import ovo.sypw.onlineexamsystemback.dto.response.AiBatchGradingResponse
 import ovo.sypw.onlineexamsystemback.dto.response.AiConfigResponse
 import ovo.sypw.onlineexamsystemback.dto.response.AiGradingResponse
 
@@ -33,4 +35,13 @@ interface AiGradingService {
      * @return Updated configuration
      */
     fun updateConfig(request: AiConfigRequest, userId: Long): AiConfigResponse
+
+    /**
+     * Use AI to grade all subjective questions in a submission
+     * @param request AI batch grading request
+     * @param userId User ID who is grading
+     * @param userRole User role
+     * @return AI batch grading response with details for each question
+     */
+    fun gradeSubmissionWithAI(request: AiBatchGradingRequest, userId: Long, userRole: String): AiBatchGradingResponse
 }

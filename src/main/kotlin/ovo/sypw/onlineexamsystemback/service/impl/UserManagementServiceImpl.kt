@@ -3,6 +3,8 @@ package ovo.sypw.onlineexamsystemback.service.impl
 import ovo.sypw.onlineexamsystemback.dto.request.ResetPasswordRequest
 import ovo.sypw.onlineexamsystemback.dto.request.UserCreateRequest
 import ovo.sypw.onlineexamsystemback.dto.request.UserUpdateRequest
+import ovo.sypw.onlineexamsystemback.dto.response.BatchDeleteResult
+import ovo.sypw.onlineexamsystemback.dto.response.FailedDetail
 import ovo.sypw.onlineexamsystemback.dto.response.UserResponse
 import ovo.sypw.onlineexamsystemback.entity.User
 import ovo.sypw.onlineexamsystemback.repository.*
@@ -159,5 +161,32 @@ class UserManagementServiceImpl(
 
     override fun getUsersByRole(role: String): List<UserResponse> {
         return userRepository.findByRole(role).map { it.toResponse() }
+    }
+
+    override fun batchDelete(ids: List<Long>, currentUserId: Long): BatchDeleteResult {
+        val successIds = mutableListOf<Long>()
+        val failedDetails = mutableListOf<FailedDetail>()
+
+        for (id in ids.distinct()) {
+            if (id == currentUserId) {
+                failedDetails.add(FailedDetail(id, "不能删除自己的账号"))
+                continue
+            }
+            try {
+                deleteUser(id)
+                successIds.add(id)
+            } catch (e: IllegalArgumentException) {
+                failedDetails.add(FailedDetail(id, e.message ?: "删除失败"))
+            } catch (e: Exception) {
+                failedDetails.add(FailedDetail(id, "系统错误: ${e.message}"))
+            }
+        }
+
+        return BatchDeleteResult(
+            successCount = successIds.size,
+            failedCount = failedDetails.size,
+            successIds = successIds,
+            failedDetails = failedDetails
+        )
     }
 }

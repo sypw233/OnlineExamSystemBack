@@ -5,8 +5,10 @@ import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
+import ovo.sypw.onlineexamsystemback.dto.request.AiBatchGradingRequest
 import ovo.sypw.onlineexamsystemback.dto.request.AiConfigRequest
 import ovo.sypw.onlineexamsystemback.dto.request.AiGradingRequest
+import ovo.sypw.onlineexamsystemback.dto.response.AiBatchGradingResponse
 import ovo.sypw.onlineexamsystemback.dto.response.AiConfigResponse
 import ovo.sypw.onlineexamsystemback.dto.response.AiGradingResponse
 import ovo.sypw.onlineexamsystemback.entity.User
@@ -126,6 +128,7 @@ class AiGradingController(
             - model_name: 切换AI模型（gpt-4, gpt-3.5-turbo等）
             - temperature: 调整输出随机性（0-2）
             - max_tokens: 限制响应长度
+            - ai_batch_concurrency: AI批量评分并行数（1-10）
             
             ## 请求示例
             ```json
@@ -160,6 +163,56 @@ class AiGradingController(
             Result.error(e.message ?: "配置不存在", 404)
         } catch (e: Exception) {
             Result.error(e.message ?: "更新失败", 500)
+        }
+    }
+
+    @PostMapping("/grade-submission")
+    @Operation(
+        summary = "AI批量评分",
+        description = """
+            对一次考试提交中的所有主观题进行AI批量评分
+            
+            ## 功能说明
+            - 自动识别提交中的主观题（填空题、简答题）
+            - 并行调用OpenAI API进行评分（并发数可配置，默认5，最大10）
+            - 将AI建议分数写入submitDetail，不改变总分和状态（待教师确认）
+            - 返回每道题的评分详情和建议总分
+            
+            ## 使用场景
+            - 教师希望对某次提交的所有主观题一键获取AI评分建议
+            - 评分结果供教师参考，需教师确认后生效
+            
+            ## 注意事项
+            - 需要配置OpenAI API Key
+            - 并发数可通过 ai_batch_concurrency 配置调整
+            - 评分结果会覆盖submitDetail中的原有主观题分数（未确认前）
+            
+            ## 权限
+            - 仅教师和管理员可使用
+        """,
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
+    fun gradeSubmissionWithAI(
+        @CurrentUser user: User,
+        @io.swagger.v3.oas.annotations.parameters.RequestBody(
+            description = "AI批量评分请求",
+            required = true
+        )
+        @Valid @RequestBody request: AiBatchGradingRequest
+    ): Result<AiBatchGradingResponse> {
+        if (user.role != "teacher" && user.role != "admin") {
+            return Result.error("只有教师和管理员可以使用AI辅助判题", 403)
+        }
+
+        return try {
+            val response = aiGradingService.gradeSubmissionWithAI(request, user.safeId, user.role)
+            Result.success(response, "AI批量评分完成：共评分 ${response.gradedCount} 道主观题")
+        } catch (e: IllegalArgumentException) {
+            Result.error(e.message ?: "评分失败", 400)
+        } catch (e: IllegalStateException) {
+            Result.error(e.message ?: "AI服务配置错误", 500)
+        } catch (e: RuntimeException) {
+            Result.error(e.message ?: "AI服务调用失败", 500)
         }
     }
 }

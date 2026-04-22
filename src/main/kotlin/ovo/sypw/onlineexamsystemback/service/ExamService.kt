@@ -2,6 +2,7 @@ package ovo.sypw.onlineexamsystemback.service
 
 import ovo.sypw.onlineexamsystemback.dto.request.ExamQuestionRequest
 import ovo.sypw.onlineexamsystemback.dto.request.ExamRequest
+import ovo.sypw.onlineexamsystemback.dto.response.BatchDeleteResult
 import ovo.sypw.onlineexamsystemback.dto.response.ExamQuestionResponse
 import ovo.sypw.onlineexamsystemback.dto.response.ExamResponse
 import org.springframework.data.domain.Page
@@ -39,4 +40,7 @@ interface ExamService {
     fun addQuestionToExam(examId: Long, request: ExamQuestionRequest, userId: Long, userRole: String)
     fun removeQuestionFromExam(examId: Long, questionId: Long, userId: Long, userRole: String)
     fun getExamQuestions(examId: Long): List<ExamQuestionResponse>
+
+    // Batch delete
+    fun batchDelete(ids: List<Long>, userId: Long, userRole: String): BatchDeleteResult
 }

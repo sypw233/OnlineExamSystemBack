@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
+import ovo.sypw.onlineexamsystemback.dto.request.BatchDeleteRequest
 import ovo.sypw.onlineexamsystemback.dto.request.ExamQuestionRequest
 import ovo.sypw.onlineexamsystemback.dto.request.ExamRequest
 import ovo.sypw.onlineexamsystemback.dto.response.ExamQuestionResponse
@@ -169,6 +170,23 @@ class ExamController(
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "删除失败", 400)
         }
+    }
+
+    @PostMapping("/batch-delete")
+    @Operation(
+        summary = "批量删除考试",
+        description = "教师批量删除自己的考试，管理员可删除任何考试。删除失败会继续处理后续记录。",
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
+    fun batchDeleteExams(
+        @Valid @RequestBody request: BatchDeleteRequest,
+        @CurrentUser user: User
+    ): Result<ovo.sypw.onlineexamsystemback.dto.response.BatchDeleteResult> {
+        if (user.role != "teacher" && user.role != "admin") {
+            return Result.error("只有教师和管理员可以批量删除考试", 403)
+        }
+        val result = examService.batchDelete(request.ids, user.safeId, user.role)
+        return Result.success(result, "批量删除完成：成功 ${result.successCount} 条，失败 ${result.failedCount} 条")
     }
 
     @PatchMapping("/{id}")

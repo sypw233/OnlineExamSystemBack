@@ -41,7 +41,8 @@ INSERT INTO ai_config (config_key, config_value, description) VALUES
 ('model_name', 'gpt-3.5-turbo', '使用的OpenAI模型'),
 ('temperature', '0.3', '模型温度参数（0-2之间，越低越确定）'),
 ('max_tokens', '500', '最大响应Token数'),
-('api_base_url', 'https://api.openai.com/v1', 'OpenAI API基础URL')
+('api_base_url', 'https://api.openai.com/v1', 'OpenAI API基础URL'),
+('ai_batch_concurrency', '5', 'AI批量评分并行调用数量（1-10）')
 ON CONFLICT (config_key) DO NOTHING;
 
 COMMENT ON TABLE ai_config IS 'AI辅助判题配置表';

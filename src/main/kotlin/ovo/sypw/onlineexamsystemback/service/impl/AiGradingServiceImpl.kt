@@ -1,18 +1,18 @@
 package ovo.sypw.onlineexamsystemback.service.impl
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import kotlinx.coroutines.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import ovo.sypw.onlineexamsystemback.config.OpenAIProperties
+import ovo.sypw.onlineexamsystemback.dto.request.AiBatchGradingRequest
 import ovo.sypw.onlineexamsystemback.dto.request.AiConfigRequest
 import ovo.sypw.onlineexamsystemback.dto.request.AiGradingRequest
-import ovo.sypw.onlineexamsystemback.dto.response.AiConfigResponse
-import ovo.sypw.onlineexamsystemback.dto.response.AiGradingResponse
+import ovo.sypw.onlineexamsystemback.dto.response.*
 import ovo.sypw.onlineexamsystemback.entity.AiConfig
-import ovo.sypw.onlineexamsystemback.repository.AiConfigRepository
-import ovo.sypw.onlineexamsystemback.repository.QuestionRepository
+import ovo.sypw.onlineexamsystemback.repository.*
 import ovo.sypw.onlineexamsystemback.service.AiGradingService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -24,6 +24,9 @@ import java.util.concurrent.TimeUnit
 class AiGradingServiceImpl(
     private val aiConfigRepository: AiConfigRepository,
     private val questionRepository: QuestionRepository,
+    private val examSubmissionRepository: ExamSubmissionRepository,
+    private val examQuestionRepository: ExamQuestionRepository,
+    private val examRepository: ExamRepository,
     private val openAIProperties: OpenAIProperties,
     private val objectMapper: ObjectMapper
 ) : AiGradingService {
@@ -214,6 +217,163 @@ class AiGradingServiceImpl(
         } catch (e: Exception) {
             throw RuntimeException("解析AI响应失败: ${e.message}", e)
         }
+    }
+
+    override fun gradeSubmissionWithAI(
+        request: AiBatchGradingRequest,
+        userId: Long,
+        userRole: String
+    ): AiBatchGradingResponse {
+        val submissionId = request.submissionId!!
+
+        // 1. Get submission and exam
+        val submission = examSubmissionRepository.findById(submissionId).orElseThrow {
+            throw IllegalArgumentException("提交记录不存在")
+        }
+        val exam = examRepository.findById(submission.examId).orElseThrow {
+            throw IllegalArgumentException("考试不存在")
+        }
+
+        // 2. Permission check
+        if (userRole != "admin" && exam.creatorId != userId) {
+            throw IllegalArgumentException("您没有权限为此提交评分")
+        }
+
+        // 3. Get exam questions and filter subjective ones
+        val examQuestions = examQuestionRepository.findByExamIdOrderBySequence(exam.examId)
+        val questionIds = examQuestions.map { it.questionId }
+        val questions = questionRepository.findAllById(questionIds).associateBy { it.id }
+
+        val subjectiveExamQuestions = examQuestions.filter { eq ->
+            val question = questions[eq.questionId]
+            question?.type in listOf("fill_blank", "short_answer")
+        }
+
+        if (subjectiveExamQuestions.isEmpty()) {
+            throw IllegalArgumentException("该提交没有主观题需要AI评分")
+        }
+
+        // 4. Parse student answers
+        val studentAnswers = if (submission.answers != null) {
+            objectMapper.readValue(
+                submission.answers!!,
+                object : com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>() {}
+            )
+        } else {
+            emptyMap()
+        }
+
+        // 5. Determine concurrency
+        val concurrency = request.concurrency?.coerceIn(1, 10)
+            ?: aiConfigRepository.findByConfigKey("ai_batch_concurrency")?.configValue?.toIntOrNull()?.coerceIn(1, 10)
+            ?: 5
+
+        // 6. Parallel AI grading using coroutines
+        val gradingResults = runBlocking {
+            val semaphore = kotlinx.coroutines.sync.Semaphore(concurrency)
+            subjectiveExamQuestions.map { eq ->
+                async(Dispatchers.IO) {
+                    semaphore.withPermit {
+                        val question = questions[eq.questionId]!!
+                        val studentAnswer = studentAnswers[eq.questionId.toString()] ?: ""
+
+                        try {
+                            val aiRequest = AiGradingRequest(
+                                questionId = eq.questionId,
+                                studentAnswer = studentAnswer,
+                                maxScore = eq.score
+                            )
+                            val aiResponse = gradeWithAI(aiRequest)
+                            AiGradingDetail(
+                                questionId = eq.questionId,
+                                questionContent = question.content,
+                                suggestedScore = aiResponse.suggestedScore,
+                                maxScore = eq.score,
+                                explanation = aiResponse.explanation,
+                                strengths = aiResponse.strengths,
+                                improvements = aiResponse.improvements
+                            )
+                        } catch (e: Exception) {
+                            AiGradingDetail(
+                                questionId = eq.questionId,
+                                questionContent = question.content,
+                                suggestedScore = 0,
+                                maxScore = eq.score,
+                                explanation = "AI评分失败: ${e.message}",
+                                strengths = emptyList(),
+                                improvements = listOf("请手动评分")
+                            )
+                        }
+                    }
+                }
+            }.awaitAll()
+        }
+
+        // 7. Calculate total suggested score for subjective questions
+        val totalSubjectiveSuggestedScore = gradingResults.sumOf { it.suggestedScore }
+
+        // 8. Get existing objective score from submitDetail if available
+        var objectiveScore: Int? = null
+        val existingScores = mutableMapOf<String, Int>()
+        if (submission.submitDetail != null) {
+            try {
+                val detail = objectMapper.readValue(
+                    submission.submitDetail!!,
+                    object : com.fasterxml.jackson.core.type.TypeReference<MutableMap<String, Any>>() {}
+                )
+                @Suppress("UNCHECKED_CAST")
+                val qScores = detail["questionScores"] as? Map<String, Int>
+                qScores?.let { existingScores.putAll(it) }
+
+                // Calculate objective score from existing data
+                val allQuestions = examQuestions.mapNotNull { questions[it.questionId] }
+                objectiveScore = allQuestions.filter {
+                    it.type in listOf("single", "multiple", "true_false")
+                }.sumOf { q ->
+                    val qid = q.id!!.toString()
+                    existingScores[qid] ?: 0
+                }
+            } catch (_: Exception) {
+                // Ignore parse errors
+            }
+        }
+
+        // 9. Write AI suggested scores to submitDetail (without changing total score or status)
+        for (result in gradingResults) {
+            existingScores[result.questionId.toString()] = result.suggestedScore
+        }
+
+        val newDetail = mutableMapOf<String, Any>(
+            "questionScores" to existingScores,
+            "aiGraded" to true,
+            "aiGradedAt" to LocalDateTime.now().toString(),
+            "aiSubjectiveSuggestedScore" to totalSubjectiveSuggestedScore,
+            "aiDetails" to gradingResults.map {
+                mapOf(
+                    "questionId" to it.questionId,
+                    "suggestedScore" to it.suggestedScore,
+                    "explanation" to it.explanation,
+                    "strengths" to it.strengths,
+                    "improvements" to it.improvements
+                )
+            }
+        )
+
+        if (objectiveScore != null) {
+            newDetail["objectiveScore"] = objectiveScore
+            newDetail["aiTotalSuggestedScore"] = objectiveScore + totalSubjectiveSuggestedScore
+        }
+
+        submission.submitDetail = objectMapper.writeValueAsString(newDetail)
+        examSubmissionRepository.save(submission)
+
+        return AiBatchGradingResponse(
+            submissionId = submissionId,
+            gradedCount = gradingResults.size,
+            totalSuggestedScore = totalSubjectiveSuggestedScore + (objectiveScore ?: 0),
+            objectiveScore = objectiveScore,
+            details = gradingResults
+        )
     }
 
     /**

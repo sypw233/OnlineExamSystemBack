@@ -1,6 +1,8 @@
 package ovo.sypw.onlineexamsystemback.service.impl
 
 import ovo.sypw.onlineexamsystemback.dto.request.QuestionRequest
+import ovo.sypw.onlineexamsystemback.dto.response.BatchDeleteResult
+import ovo.sypw.onlineexamsystemback.dto.response.FailedDetail
 import ovo.sypw.onlineexamsystemback.dto.response.QuestionResponse
 import ovo.sypw.onlineexamsystemback.entity.Question
 import ovo.sypw.onlineexamsystemback.repository.QuestionBankQuestionRepository
@@ -222,5 +224,28 @@ class QuestionServiceImpl(
     private fun batchFetchBankCounts(questionIds: List<Long>): Map<Long, Long> {
         return questionBankQuestionRepository.countByQuestionIdIn(questionIds)
             .associate { (it[0] as Number).toLong() to (it[1] as Number).toLong() }
+    }
+
+    override fun batchDelete(ids: List<Long>, userId: Long, userRole: String): BatchDeleteResult {
+        val successIds = mutableListOf<Long>()
+        val failedDetails = mutableListOf<FailedDetail>()
+
+        for (id in ids.distinct()) {
+            try {
+                deleteQuestion(id, userId, userRole)
+                successIds.add(id)
+            } catch (e: IllegalArgumentException) {
+                failedDetails.add(FailedDetail(id, e.message ?: "删除失败"))
+            } catch (e: Exception) {
+                failedDetails.add(FailedDetail(id, "系统错误: ${e.message}"))
+            }
+        }
+
+        return BatchDeleteResult(
+            successCount = successIds.size,
+            failedCount = failedDetails.size,
+            successIds = successIds,
+            failedDetails = failedDetails
+        )
     }
 }

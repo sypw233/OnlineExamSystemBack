@@ -137,15 +137,15 @@ class ExamServiceImpl(
             throw IllegalArgumentException("您没有权限删除此考试")
         }
 
-        // Check if exam has submissions
-        val submissionCount = submissionRepository.countByExamId(id)
-        if (submissionCount > 0) {
-            throw IllegalArgumentException("该考试已有 $submissionCount 条提交记录，无法删除")
-        }
-
         // Delete associated exam questions first
         val examQuestions = examQuestionRepository.findByExamIdOrderBySequence(id)
         examQuestionRepository.deleteAll(examQuestions)
+
+        // Delete associated submissions if any
+        val submissions = submissionRepository.findByExamId(id)
+        if (submissions.isNotEmpty()) {
+            submissionRepository.deleteAll(submissions)
+        }
 
         examRepository.delete(exam)
     }
@@ -550,6 +550,29 @@ class ExamServiceImpl(
                 )
             }
         }
+    }
+
+    override fun batchDelete(ids: List<Long>, userId: Long, userRole: String): BatchDeleteResult {
+        val successIds = mutableListOf<Long>()
+        val failedDetails = mutableListOf<FailedDetail>()
+
+        for (id in ids.distinct()) {
+            try {
+                deleteExam(id, userId, userRole)
+                successIds.add(id)
+            } catch (e: IllegalArgumentException) {
+                failedDetails.add(FailedDetail(id, e.message ?: "删除失败"))
+            } catch (e: Exception) {
+                failedDetails.add(FailedDetail(id, "系统错误: ${e.message}"))
+            }
+        }
+
+        return BatchDeleteResult(
+            successCount = successIds.size,
+            failedCount = failedDetails.size,
+            successIds = successIds,
+            failedDetails = failedDetails
+        )
     }
 
     private fun validateProctoringSettings(

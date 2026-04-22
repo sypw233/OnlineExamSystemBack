@@ -1,6 +1,7 @@
 package ovo.sypw.onlineexamsystemback.service
 
 import ovo.sypw.onlineexamsystemback.dto.request.QuestionRequest
+import ovo.sypw.onlineexamsystemback.dto.response.BatchDeleteResult
 import ovo.sypw.onlineexamsystemback.dto.response.QuestionResponse
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -27,4 +28,7 @@ interface QuestionService {
         category: String?,
         pageable: Pageable
     ): Page<QuestionResponse>
+
+    // Batch delete
+    fun batchDelete(ids: List<Long>, userId: Long, userRole: String): BatchDeleteResult
 }
