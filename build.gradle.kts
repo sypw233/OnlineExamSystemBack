@@ -37,8 +37,10 @@ dependencies{
     // File Upload
     implementation("commons-io:commons-io:2.15.1")
     
-    // Baidu Cloud BOS SDK
-    implementation("com.baidubce:bce-java-sdk:0.10.165")
+    // Baidu Cloud BOS SDK - exclude old commons-io to avoid conflicts with POI
+    implementation("com.baidubce:bce-java-sdk:0.10.165") {
+        exclude(group = "commons-io", module = "commons-io")
+    }
     
     // HTTP Client for OpenAI API
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
