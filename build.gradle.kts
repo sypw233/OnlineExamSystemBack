@@ -45,7 +45,7 @@ dependencies{
     
     // Apache POI for Excel import/export
     implementation("org.apache.poi:poi-ooxml:5.4.0")
-    implementation("org.apache.poi:poi:5.2.5")
+    implementation("org.apache.poi:poi:5.4.0")
     
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
