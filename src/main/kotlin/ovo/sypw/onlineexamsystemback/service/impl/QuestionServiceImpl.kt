@@ -7,6 +7,8 @@ import ovo.sypw.onlineexamsystemback.repository.QuestionBankQuestionRepository
 import ovo.sypw.onlineexamsystemback.repository.QuestionRepository
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.service.QuestionService
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -117,9 +119,8 @@ class QuestionServiceImpl(
         return toQuestionResponse(question, creator.realName ?: creator.username)
     }
 
-    override fun getAllQuestions(): List<QuestionResponse> {
-        val questions = questionRepository.findAll()
-        return questions.map { question ->
+    override fun getAllQuestions(pageable: Pageable): Page<QuestionResponse> {
+        return questionRepository.findAll(pageable).map { question ->
             val creator = userRepository.findById(question.creatorId).orElseThrow {
                 throw IllegalArgumentException("创建者不存在")
             }
@@ -127,20 +128,17 @@ class QuestionServiceImpl(
         }
     }
 
-    override fun getMyQuestions(userId: Long): List<QuestionResponse> {
-        val questions = questionRepository.findByCreatorId(userId)
+    override fun getMyQuestions(userId: Long, pageable: Pageable): Page<QuestionResponse> {
         val creator = userRepository.findById(userId).orElseThrow {
             throw IllegalArgumentException("用户不存在")
         }
-
-        return questions.map { question ->
+        return questionRepository.findByCreatorId(userId, pageable).map { question ->
             toQuestionResponse(question, creator.realName ?: creator.username)
         }
     }
 
-    override fun getQuestionsByType(type: String): List<QuestionResponse> {
-        val questions = questionRepository.findByType(type)
-        return questions.map { question ->
+    override fun getQuestionsByType(type: String, pageable: Pageable): Page<QuestionResponse> {
+        return questionRepository.findByType(type, pageable).map { question ->
             val creator = userRepository.findById(question.creatorId).orElseThrow {
                 throw IllegalArgumentException("创建者不存在")
             }
@@ -148,9 +146,8 @@ class QuestionServiceImpl(
         }
     }
 
-    override fun getQuestionsByDifficulty(difficulty: String): List<QuestionResponse> {
-        val questions = questionRepository.findByDifficulty(difficulty)
-        return questions.map { question ->
+    override fun getQuestionsByDifficulty(difficulty: String, pageable: Pageable): Page<QuestionResponse> {
+        return questionRepository.findByDifficulty(difficulty, pageable).map { question ->
             val creator = userRepository.findById(question.creatorId).orElseThrow {
                 throw IllegalArgumentException("创建者不存在")
             }
@@ -158,9 +155,23 @@ class QuestionServiceImpl(
         }
     }
 
-    override fun getQuestionsByCategory(category: String): List<QuestionResponse> {
-        val questions = questionRepository.findByCategory(category)
-        return questions.map { question ->
+    override fun getQuestionsByCategory(category: String, pageable: Pageable): Page<QuestionResponse> {
+        return questionRepository.findByCategory(category, pageable).map { question ->
+            val creator = userRepository.findById(question.creatorId).orElseThrow {
+                throw IllegalArgumentException("创建者不存在")
+            }
+            toQuestionResponse(question, creator.realName ?: creator.username)
+        }
+    }
+
+    override fun searchQuestions(
+        creatorId: Long?,
+        type: String?,
+        difficulty: String?,
+        category: String?,
+        pageable: Pageable
+    ): Page<QuestionResponse> {
+        return questionRepository.searchQuestions(creatorId, type, difficulty, category, pageable).map { question ->
             val creator = userRepository.findById(question.creatorId).orElseThrow {
                 throw IllegalArgumentException("创建者不存在")
             }

@@ -173,15 +173,4 @@ class UserManagementController(
         }
     }
 
-    @GetMapping("/by-role/{role}")
-    @Operation(summary = "按角色查询全部用户", description = "获取指定角色的所有用户列表(不分页)")
-    fun getUsersByRole(
-        @Parameter(description = "角色: admin/teacher/student") @PathVariable role: String
-    ): Result<List<UserResponse>> {
-        checkAdmin<List<UserResponse>>()?.let { return it }
-        if (role !in listOf("admin", "teacher", "student")) {
-            return Result.error("角色值无效, 只能是 admin、teacher 或 student", 400)
-        }
-        return Result.success(userManagementService.getUsersByRole(role))
-    }
 }

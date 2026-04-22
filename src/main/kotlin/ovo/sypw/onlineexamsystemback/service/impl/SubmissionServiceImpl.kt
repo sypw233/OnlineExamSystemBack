@@ -9,6 +9,8 @@ import ovo.sypw.onlineexamsystemback.dto.response.SubmissionResponse
 import ovo.sypw.onlineexamsystemback.entity.ExamSubmission
 import ovo.sypw.onlineexamsystemback.repository.*
 import ovo.sypw.onlineexamsystemback.service.SubmissionService
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
@@ -130,8 +132,7 @@ class SubmissionServiceImpl(
         return toSubmissionResponse(submission, exam.title)
     }
 
-    override fun getExamSubmissions(examId: Long, userId: Long, userRole: String): List<SubmissionResponse> {
-        // Only teacher/admin can view all exam submissions
+    override fun getExamSubmissions(examId: Long, userId: Long, userRole: String, pageable: Pageable): Page<SubmissionResponse> {
         if (userRole != "teacher" && userRole != "admin") {
             throw IllegalArgumentException("只有教师和管理员可以查看考试提交记录")
         }
@@ -140,18 +141,15 @@ class SubmissionServiceImpl(
             throw IllegalArgumentException("考试不存在")
         }
 
-        // Check if teacher owns the exam
         if (userRole == "teacher" && exam.creatorId != userId) {
             throw IllegalArgumentException("您没有权限查看此考试的提交记录")
         }
 
-        val submissions = submissionRepository.findByExamId(examId)
-        return submissions.map { toSubmissionResponse(it, exam.title) }
+        return submissionRepository.findByExamId(examId, pageable).map { toSubmissionResponse(it, exam.title) }
     }
 
-    override fun getUserSubmissions(userId: Long): List<SubmissionResponse> {
-        val submissions = submissionRepository.findByUserId(userId)
-        return submissions.map { submission ->
+    override fun getUserSubmissions(userId: Long, pageable: Pageable): Page<SubmissionResponse> {
+        return submissionRepository.findByUserId(userId, pageable).map { submission ->
             val exam = examRepository.findById(submission.examId).orElseThrow {
                 throw IllegalArgumentException("考试不存在")
             }
@@ -440,7 +438,8 @@ class SubmissionServiceImpl(
             switchCount = submission.switchCount,
             startTime = submission.startTime,
             submitTime = submission.submitTime,
-            submitDetail = submission.submitDetail
+            submitDetail = submission.submitDetail,
+            proctoringData = submission.proctoringData
         )
     }
 }

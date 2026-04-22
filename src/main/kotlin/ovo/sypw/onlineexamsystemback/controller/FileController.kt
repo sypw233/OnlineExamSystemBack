@@ -205,7 +205,7 @@ class FileController(
             ## 说明
             - 返回的URL可以直接在浏览器中访问
             - 所有文件都是公共读权限
-            - 无需认证即可访问文件
+            - 需要登录后才能获取文件URL
         """,
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
@@ -216,6 +216,13 @@ class FileController(
         )
         @PathVariable fileKey: String
     ): Result<Map<String, String>> {
+        val authentication = SecurityContextHolder.getContext().authentication
+            ?: return Result.error("未登录", 401)
+
+        val username = authentication.name
+        val user = userRepository.findByUsername(username)
+            ?: return Result.error("用户不存在", 404)
+
         return try {
             val url = fileService.getFileUrl(fileKey)
             Result.success(mapOf("url" to url))

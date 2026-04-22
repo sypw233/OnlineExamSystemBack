@@ -16,6 +16,9 @@ data class User(
     @Column(nullable = false, length = 255)
     var password: String,
 
+    @Column(name = "nickname", length = 50)
+    var nickname: String? = null,
+
     @Column(name = "real_name", length = 50)
     var realName: String? = null,
 
@@ -24,6 +27,9 @@ data class User(
 
     @Column(unique = true, length = 100)
     var email: String? = null,
+
+    @Column(length = 500)
+    var avatar: String? = null,
 
     @Column(nullable = false)
     var status: Int = 1, // 1-Active, 0-Disabled

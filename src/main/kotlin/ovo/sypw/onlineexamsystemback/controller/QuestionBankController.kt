@@ -11,6 +11,8 @@ import ovo.sypw.onlineexamsystemback.dto.response.QuestionResponse
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.service.QuestionBankService
 import ovo.sypw.onlineexamsystemback.util.Result
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.PageRequest
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.*
 
@@ -51,11 +53,26 @@ class QuestionBankController(
     @GetMapping
     @Operation(
         summary = "获取所有题库",
-        description = "获取所有题库列表",
+        description = "管理员获取全部题库，教师仅获取自己创建的题库，支持分页",
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
-    fun getAllQuestionBanks(): Result<List<QuestionBankResponse>> {
-        val questionBanks = questionBankService.getAllQuestionBanks()
+    fun getAllQuestionBanks(
+        @Parameter(description = "页码", example = "0") @RequestParam(defaultValue = "0") page: Int,
+        @Parameter(description = "每页条数", example = "20") @RequestParam(defaultValue = "20") size: Int
+    ): Result<Page<QuestionBankResponse>> {
+        val authentication = SecurityContextHolder.getContext().authentication
+            ?: return Result.error("未登录", 401)
+
+        val username = authentication.name
+        val user = userRepository.findByUsername(username)
+            ?: return Result.error("用户不存在", 404)
+
+        val pageable = PageRequest.of(page, size.coerceAtMost(100))
+        val questionBanks = if (user.role == "admin") {
+            questionBankService.getAllQuestionBanks(pageable)
+        } else {
+            questionBankService.getMyQuestionBanks(user.id ?: 0L, pageable)
+        }
         return Result.success(questionBanks)
     }
 
@@ -68,6 +85,13 @@ class QuestionBankController(
     fun getQuestionBankById(
         @Parameter(description = "题库ID") @PathVariable id: Long
     ): Result<QuestionBankResponse> {
+        val authentication = SecurityContextHolder.getContext().authentication
+            ?: return Result.error("未登录", 401)
+
+        val username = authentication.name
+        val user = userRepository.findByUsername(username)
+            ?: return Result.error("用户不存在", 404)
+
         return try {
             val questionBank = questionBankService.getQuestionBankById(id)
             Result.success(questionBank)
@@ -125,23 +149,7 @@ class QuestionBankController(
         }
     }
 
-    @GetMapping("/my")
-    @Operation(
-        summary = "获取我的题库",
-        description = "获取当前用户创建的所有题库",
-        security = [SecurityRequirement(name = "Bearer Authentication")]
-    )
-    fun getMyQuestionBanks(): Result<List<QuestionBankResponse>> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
 
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
-        val questionBanks = questionBankService.getMyQuestionBanks(user.id ?: 0L)
-        return Result.success(questionBanks)
-    }
 
     @PostMapping("/{id}/questions/{questionId}")
     @Operation(
@@ -217,6 +225,13 @@ class QuestionBankController(
     fun getQuestionsInBank(
         @Parameter(description = "题库ID", example = "1") @PathVariable id: Long
     ): Result<List<QuestionResponse>> {
+        val authentication = SecurityContextHolder.getContext().authentication
+            ?: return Result.error("未登录", 401)
+
+        val username = authentication.name
+        val user = userRepository.findByUsername(username)
+            ?: return Result.error("用户不存在", 404)
+
         return try {
             val questions = questionBankService.getQuestionsInBank(id)
             Result.success(questions)

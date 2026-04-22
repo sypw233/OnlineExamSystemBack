@@ -2,6 +2,7 @@ package ovo.sypw.onlineexamsystemback.controller
 
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
+import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
@@ -9,9 +10,14 @@ import ovo.sypw.onlineexamsystemback.dto.request.ExamQuestionRequest
 import ovo.sypw.onlineexamsystemback.dto.request.ExamRequest
 import ovo.sypw.onlineexamsystemback.dto.response.ExamQuestionResponse
 import ovo.sypw.onlineexamsystemback.dto.response.ExamResponse
+import ovo.sypw.onlineexamsystemback.dto.response.SubmissionResponse
+import ovo.sypw.onlineexamsystemback.repository.CourseRepository
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.service.ExamService
+import ovo.sypw.onlineexamsystemback.service.SubmissionService
 import ovo.sypw.onlineexamsystemback.util.Result
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.PageRequest
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.*
 
@@ -20,7 +26,9 @@ import org.springframework.web.bind.annotation.*
 @Tag(name = "考试管理", description = "考试相关接口")
 class ExamController(
     private val examService: ExamService,
-    private val userRepository: UserRepository
+    private val submissionService: SubmissionService,
+    private val userRepository: UserRepository,
+    private val courseRepository: CourseRepository
 ) {
 
     @PostMapping
@@ -65,12 +73,58 @@ class ExamController(
 
     @GetMapping
     @Operation(
-        summary = "获取所有考试",
-        description = "获取所有考试列表",
+        summary = "查询考试列表",
+        description = "管理员获取全部考试，教师获取自己授课课程的考试。支持按状态、课程筛选，支持分页。",
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
-    fun getAllExams(): Result<List<ExamResponse>> {
-        val exams = examService.getAllExams()
+    fun getAllExams(
+        @Parameter(description = "页码", example = "0")
+        @RequestParam(defaultValue = "0") page: Int,
+        @Parameter(description = "每页条数", example = "20")
+        @RequestParam(defaultValue = "20") size: Int,
+        @Parameter(description = "考试状态", schema = Schema(allowableValues = ["0", "1", "2"]))
+        @RequestParam(required = false) status: Int?,
+        @Parameter(description = "课程ID")
+        @RequestParam(required = false) courseId: Long?
+    ): Result<Page<ExamResponse>> {
+        val authentication = SecurityContextHolder.getContext().authentication
+            ?: return Result.error("未登录", 401)
+
+        val username = authentication.name
+        val user = userRepository.findByUsername(username)
+            ?: return Result.error("用户不存在", 404)
+
+        val pageable = PageRequest.of(page, size.coerceAtMost(100))
+
+        // If teacher, limit by their teaching courses
+        if (user.role == "teacher") {
+            val courseIds = courseRepository.findByTeacherId(user.id ?: 0L).map { it.id ?: 0L }
+            if (courseIds.isEmpty()) {
+                return Result.success(Page.empty(pageable))
+            }
+            if (courseId != null && courseId !in courseIds) {
+                return Result.error("您没有权限查看此课程的考试", 403)
+            }
+            val exams = if (courseId != null) {
+                examService.getExamsByCourse(courseId, pageable)
+            } else {
+                examService.getMyTeachingExams(user.id ?: 0L, pageable)
+            }
+            // In-memory status filter for teachers (page metadata may be slightly off, acceptable for small datasets)
+            val filtered = if (status != null) {
+                val content = exams.content.filter { it.status == status }
+                org.springframework.data.domain.PageImpl(content, exams.pageable, content.size.toLong())
+            } else exams
+            return Result.success(filtered)
+        }
+
+        // Admin: use unified search
+        val exams = examService.searchExams(
+            creatorId = null,
+            status = status,
+            courseId = courseId,
+            pageable = pageable
+        )
         return Result.success(exams)
     }
 
@@ -83,6 +137,13 @@ class ExamController(
     fun getExamById(
         @Parameter(description = "考试ID", example = "1") @PathVariable id: Long
     ): Result<ExamResponse> {
+        val authentication = SecurityContextHolder.getContext().authentication
+            ?: return Result.error("未登录", 401)
+
+        val username = authentication.name
+        val user = userRepository.findByUsername(username)
+            ?: return Result.error("用户不存在", 404)
+
         return try {
             val exam = examService.getExamById(id)
             Result.success(exam)
@@ -140,76 +201,16 @@ class ExamController(
         }
     }
 
-    @GetMapping("/my")
+    @PatchMapping("/{id}")
     @Operation(
-        summary = "获取我的考试",
-        description = "获取当前用户创建的所有考试",
+        summary = "部分更新考试",
+        description = "支持修改考试状态（如发布草稿考试）。教师只能修改自己的考试，管理员可修改任何考试。",
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
-    fun getMyExams(): Result<List<ExamResponse>> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
-        val exams = examService.getMyExams(user.id ?: 0L)
-        return Result.success(exams)
-    }
-
-    @GetMapping("/status/{status}")
-    @Operation(
-        summary = "按状态筛选考试",
-        description = "获取指定状态的考试列表。0-草稿, 1-已发布, 2-已结束",
-        security = [SecurityRequirement(name = "Bearer Authentication")]
-    )
-    fun getExamsByStatus(
-        @Parameter(
-            description = "考试状态",
-            example = "1",
-            schema = io.swagger.v3.oas.annotations.media.Schema(
-                allowableValues = ["0", "1", "2"]
-            )
-        )
-        @PathVariable status: Int
-    ): Result<List<ExamResponse>> {
-        val exams = examService.getExamsByStatus(status)
-        return Result.success(exams)
-    }
-
-    @GetMapping("/course/{courseId}")
-    @Operation(
-        summary = "获取课程的所有考试",
-        description = "查看指定课程的所有考试",
-        security = [SecurityRequirement(name = "Bearer Authentication")]
-    )
-    fun getExamsByCourse(
-        @Parameter(description = "课程ID", example = "1") @PathVariable courseId: Long
-    ): Result<List<ExamResponse>> {
-        return try {
-            val exams = examService.getExamsByCourse(courseId)
-            Result.success(exams)
-        } catch (e: IllegalArgumentException) {
-            Result.error(e.message ?: "查询失败", 400)
-        }
-    }
-
-    @PostMapping("/{id}/publish")
-    @Operation(
-        summary = "发布考试",
-        description = """
-            将草稿状态的考试发布为可参加状态
-            
-            发布前验证:
-            - 至少包含一道题目
-            - 考试时间未过期
-            - 监考设置正确
-        """,
-        security = [SecurityRequirement(name = "Bearer Authentication")]
-    )
-    fun publishExam(
-        @Parameter(description = "考试ID", example = "1") @PathVariable id: Long
+    fun patchExam(
+        @Parameter(description = "考试ID", example = "1") @PathVariable id: Long,
+        @Parameter(description = "状态: 1=发布", schema = Schema(allowableValues = ["1"]))
+        @RequestParam status: Int
     ): Result<ExamResponse> {
         val authentication = SecurityContextHolder.getContext().authentication
             ?: return Result.error("未登录", 401)
@@ -219,10 +220,38 @@ class ExamController(
             ?: return Result.error("用户不存在", 404)
 
         return try {
-            val exam = examService.publishExam(id, user.id ?: 0L, user.role)
-            Result.success(exam, "考试发布成功")
+            val exam = examService.patchExam(id, status, user.id ?: 0L, user.role)
+            Result.success(exam, "考试更新成功")
         } catch (e: IllegalArgumentException) {
-            Result.error(e.message ?: "发布失败", 400)
+            Result.error(e.message ?: "更新失败", 400)
+        }
+    }
+
+    @PostMapping("/{id}/submissions")
+    @Operation(
+        summary = "开始考试",
+        description = "学生开始考试，创建答题记录。如果已经开始过，返回现有记录。",
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
+    fun startExam(
+        @Parameter(description = "考试ID", example = "1") @PathVariable id: Long
+    ): Result<SubmissionResponse> {
+        val authentication = SecurityContextHolder.getContext().authentication
+            ?: return Result.error("未登录", 401)
+
+        val username = authentication.name
+        val user = userRepository.findByUsername(username)
+            ?: return Result.error("用户不存在", 404)
+
+        if (user.role != "student") {
+            return Result.error("只有学生可以开始考试", 403)
+        }
+
+        return try {
+            val submission = submissionService.startExam(id, user.id ?: 0L)
+            Result.success(submission, "考试已开始")
+        } catch (e: IllegalArgumentException) {
+            Result.error(e.message ?: "开始失败", 400)
         }
     }
 
@@ -285,12 +314,23 @@ class ExamController(
     @GetMapping("/{id}/questions")
     @Operation(
         summary = "获取考试的所有题目",
-        description = "查看指定考试包含的所有题目（按顺序排列）",
+        description = "教师和管理员查看指定考试包含的所有题目（按顺序排列），学生无权访问",
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun getExamQuestions(
         @Parameter(description = "考试ID", example = "1") @PathVariable id: Long
     ): Result<List<ExamQuestionResponse>> {
+        val authentication = SecurityContextHolder.getContext().authentication
+            ?: return Result.error("未登录", 401)
+
+        val username = authentication.name
+        val user = userRepository.findByUsername(username)
+            ?: return Result.error("用户不存在", 404)
+
+        if (user.role != "teacher" && user.role != "admin") {
+            return Result.error("只有教师和管理员可以查看考试题目", 403)
+        }
+
         return try {
             val questions = examService.getExamQuestions(id)
             Result.success(questions)

@@ -36,4 +36,10 @@ interface NotificationRepository : JpaRepository<Notification, Long> {
     @Transactional
     @Query("DELETE FROM Notification n WHERE n.userId = :userId AND n.isRead = true AND n.createTime < :beforeDate")
     fun deleteOldReadNotifications(userId: Long, beforeDate: java.time.LocalDateTime): Int
+
+    // Batch delete old read notifications across all users
+    @Modifying
+    @Transactional
+    @Query("DELETE FROM Notification n WHERE n.isRead = true AND n.createTime < :beforeDate")
+    fun deleteOldReadNotifications(beforeDate: java.time.LocalDateTime): Int
 }

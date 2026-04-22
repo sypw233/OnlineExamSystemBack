@@ -2,7 +2,6 @@ package ovo.sypw.onlineexamsystemback.service
 
 import ovo.sypw.onlineexamsystemback.dto.response.ImportResultResponse
 import org.springframework.web.multipart.MultipartFile
-import jakarta.servlet.http.HttpServletResponse
 
 interface QuestionImportExportService {
     /**
@@ -17,17 +16,19 @@ interface QuestionImportExportService {
         bankId: Long,
         creatorId: Long
     ): ImportResultResponse
-    
+
     /**
-     * Export questions to Excel file
+     * Export questions to Excel file and upload to BOS
      * @param bankId Question bank ID to export from
-     * @param response HTTP response to write Excel file to
+     * @param userId Exporter user ID
+     * @return Download URL of the exported Excel file
      */
-    fun exportQuestionsToExcel(bankId: Long, response: HttpServletResponse)
-    
+    fun exportQuestionsToExcel(bankId: Long, userId: Long): String
+
     /**
-     * Generate and download import template
-     * @param response HTTP response to write template to
+     * Generate import template and upload to BOS
+     * @param userId Downloader user ID
+     * @return Download URL of the template file
      */
-    fun downloadImportTemplate(response: HttpServletResponse)
+    fun downloadImportTemplate(userId: Long): String
 }

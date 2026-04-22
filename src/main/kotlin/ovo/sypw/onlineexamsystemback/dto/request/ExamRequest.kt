@@ -36,7 +36,7 @@ data class ExamRequest(
     val totalScore: Int = 100,
 
     @Schema(description = "是否需要手动评分", example = "false", required = false)
-    val needsGrading: Boolean = false,
+    val needsGrading: Boolean? = null,
 
     // 监考控制字段
     @field:Pattern(
@@ -52,7 +52,7 @@ data class ExamRequest(
     val allowedPlatforms: String? = "both",
 
     @Schema(description = "是否开启严格监考", example = "true", required = false)
-    val strictMode: Boolean = false,
+    val strictMode: Boolean? = null,
 
     @field:Min(value = 0, message = "最大切出次数不能为负数")
     @Schema(
@@ -63,5 +63,5 @@ data class ExamRequest(
     val maxSwitchCount: Int? = null,
 
     @Schema(description = "是否要求全屏模式（仅桌面端）", example = "true", required = false)
-    val fullscreenRequired: Boolean = false
+    val fullscreenRequired: Boolean? = null
 )

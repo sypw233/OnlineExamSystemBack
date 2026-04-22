@@ -99,10 +99,8 @@ class StatisticsServiceImpl(
         val exams = examRepository.findByCourseId(courseId)
         val examIds = exams.map { it.id!! }
 
-        // Get all submissions for these exams
-        val allSubmissions = examIds.flatMap { examId ->
-            submissionRepository.findByExamId(examId).filter { it.status >= 1 }
-        }
+        // Get all submissions for these exams (batch query)
+        val allSubmissions = submissionRepository.findByExamIdIn(examIds).filter { it.status >= 1 }
 
         // Calculate statistics
         val studentIds = allSubmissions.map { it.userId }.distinct()
@@ -136,55 +134,52 @@ class StatisticsServiceImpl(
         val examQuestions = examQuestionRepository.findByQuestionId(questionId)
         val usageCount = examQuestions.size
 
-        // Get all submissions for exams using this question
+        // Batch query all submissions for these exams
+        val examIds = examQuestions.map { it.examId }.distinct()
+        val allSubmissions = submissionRepository.findByExamIdIn(examIds).filter { it.status >= 1 }
+
         var totalAttempts = 0
         var correctCount = 0
         val optionCounts = mutableMapOf<String, Int>()
 
-        examQuestions.forEach { eq ->
-            val submissions = submissionRepository.findByExamId(eq.examId).filter { it.status >= 1 }
+        allSubmissions.forEach { submission ->
+            if (submission.answers != null) {
+                try {
+                    val answers = objectMapper.readValue(
+                        submission.answers!!,
+                        object : TypeReference<Map<String, String>>() {}
+                    )
 
-            submissions.forEach { submission ->
-                if (submission.answers != null) {
-                    try {
-                        val answers = objectMapper.readValue(
-                            submission.answers!!, 
-                            object : TypeReference<Map<String, String>>() {}
-                        )
+                    val userAnswer = answers[questionId.toString()]
+                    if (userAnswer != null) {
+                        totalAttempts++
 
-                        val userAnswer = answers[questionId.toString()]
-                        if (userAnswer != null) {
-                            totalAttempts++
-
-                            // Check if correct
-                            val correctAnswer = question.answer?.trim() ?: ""
-                            val isCorrect = when (question.type) {
-                                "single", "true_false" -> {
-                                    userAnswer.trim().equals(correctAnswer, ignoreCase = true)
-                                }
-                                "multiple" -> {
-                                    val userOptions = userAnswer.split(",").map { it.trim() }.toSet()
-                                    val correctOptions = correctAnswer.split(",").map { it.trim() }.toSet()
-                                    userOptions == correctOptions
-                                }
-                                else -> false  // fill_blank, short_answer need manual grading
+                        val correctAnswer = question.answer?.trim() ?: ""
+                        val isCorrect = when (question.type) {
+                            "single", "true_false" -> {
+                                userAnswer.trim().equals(correctAnswer, ignoreCase = true)
                             }
-
-                            if (isCorrect) {
-                                correctCount++
+                            "multiple" -> {
+                                val userOptions = userAnswer.split(",").map { it.trim() }.toSet()
+                                val correctOptions = correctAnswer.split(",").map { it.trim() }.toSet()
+                                userOptions == correctOptions
                             }
+                            else -> false
+                        }
 
-                            // Count option distribution for objective questions
-                            if (question.type in listOf("single", "multiple", "true_false")) {
-                                val options = userAnswer.split(",").map { it.trim() }
-                                options.forEach { option ->
-                                    optionCounts[option] = optionCounts.getOrDefault(option, 0) + 1
-                                }
+                        if (isCorrect) {
+                            correctCount++
+                        }
+
+                        if (question.type in listOf("single", "multiple", "true_false")) {
+                            val options = userAnswer.split(",").map { it.trim() }
+                            options.forEach { option ->
+                                optionCounts[option] = optionCounts.getOrDefault(option, 0) + 1
                             }
                         }
-                    } catch (e: Exception) {
-                        // Skip invalid answer data
                     }
+                } catch (e: Exception) {
+                    // Skip invalid answer data
                 }
             }
         }

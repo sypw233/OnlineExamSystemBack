@@ -151,6 +151,7 @@ class NotificationServiceImpl(
     private fun toResponse(notification: Notification): NotificationResponse {
         return NotificationResponse(
             id = notification.id ?: 0L,
+            userId = notification.userId,
             type = notification.type,
             title = notification.title,
             content = notification.content,

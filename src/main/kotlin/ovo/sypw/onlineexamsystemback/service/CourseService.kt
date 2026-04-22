@@ -3,6 +3,8 @@ package ovo.sypw.onlineexamsystemback.service
 import ovo.sypw.onlineexamsystemback.dto.request.CourseRequest
 import ovo.sypw.onlineexamsystemback.dto.response.CourseResponse
 import ovo.sypw.onlineexamsystemback.dto.response.EnrollmentResponse
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 
 interface CourseService {
     // Course CRUD
@@ -10,7 +12,7 @@ interface CourseService {
     fun updateCourse(id: Long, courseRequest: CourseRequest, userId: Long, userRole: String): CourseResponse
     fun deleteCourse(id: Long, userId: Long, userRole: String)
     fun getCourseById(id: Long): CourseResponse
-    fun getAllActiveCourses(): List<CourseResponse>
+    fun getAllActiveCourses(pageable: Pageable): Page<CourseResponse>
     fun getMyCourses(userId: Long, userRole: String): List<CourseResponse>
     
     // Enrollment

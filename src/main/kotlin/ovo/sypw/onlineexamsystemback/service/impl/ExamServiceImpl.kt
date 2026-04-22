@@ -8,6 +8,8 @@ import ovo.sypw.onlineexamsystemback.entity.Exam
 import ovo.sypw.onlineexamsystemback.entity.ExamQuestion
 import ovo.sypw.onlineexamsystemback.repository.*
 import ovo.sypw.onlineexamsystemback.service.ExamService
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
@@ -19,7 +21,8 @@ class ExamServiceImpl(
     private val examQuestionRepository: ExamQuestionRepository,
     private val courseRepository: CourseRepository,
     private val userRepository: UserRepository,
-    private val questionRepository: QuestionRepository
+    private val questionRepository: QuestionRepository,
+    private val submissionRepository: ExamSubmissionRepository
 ) : ExamService {
 
     override fun createExam(examRequest: ExamRequest, creatorId: Long): ExamResponse {
@@ -43,9 +46,9 @@ class ExamServiceImpl(
 
         // Validate proctoring settings
         validateProctoringSettings(
-            examRequest.fullscreenRequired,
+            examRequest.fullscreenRequired ?: false,
             examRequest.allowedPlatforms,
-            examRequest.strictMode,
+            examRequest.strictMode ?: false,
             examRequest.maxSwitchCount
         )
 
@@ -58,11 +61,11 @@ class ExamServiceImpl(
             endTime = examRequest.endTime,
             duration = examRequest.duration,
             totalScore = examRequest.totalScore,
-            needsGrading = examRequest.needsGrading,
+            needsGrading = examRequest.needsGrading ?: false,
             allowedPlatforms = examRequest.allowedPlatforms,
-            strictMode = examRequest.strictMode,
+            strictMode = examRequest.strictMode ?: false,
             maxSwitchCount = examRequest.maxSwitchCount,
-            fullscreenRequired = examRequest.fullscreenRequired
+            fullscreenRequired = examRequest.fullscreenRequired ?: false
         )
 
         val savedExam = examRepository.save(exam)
@@ -91,9 +94,9 @@ class ExamServiceImpl(
 
         // Validate proctoring settings
         validateProctoringSettings(
-            examRequest.fullscreenRequired,
+            examRequest.fullscreenRequired ?: false,
             examRequest.allowedPlatforms,
-            examRequest.strictMode,
+            examRequest.strictMode ?: false,
             examRequest.maxSwitchCount
         )
 
@@ -103,11 +106,11 @@ class ExamServiceImpl(
         exam.endTime = examRequest.endTime
         exam.duration = examRequest.duration
         exam.totalScore = examRequest.totalScore
-        exam.needsGrading = examRequest.needsGrading
+        exam.needsGrading = examRequest.needsGrading ?: false
         exam.allowedPlatforms = examRequest.allowedPlatforms
-        exam.strictMode = examRequest.strictMode
+        exam.strictMode = examRequest.strictMode ?: false
         exam.maxSwitchCount = examRequest.maxSwitchCount
-        exam.fullscreenRequired = examRequest.fullscreenRequired
+        exam.fullscreenRequired = examRequest.fullscreenRequired ?: false
 
         val updatedExam = examRepository.save(exam)
         val course = courseRepository.findById(exam.courseId).orElseThrow {
@@ -130,8 +133,16 @@ class ExamServiceImpl(
             throw IllegalArgumentException("您没有权限删除此考试")
         }
 
-        // TODO: Check if exam has submissions (will be implemented in submission module)
-        
+        // Check if exam has submissions
+        val submissionCount = submissionRepository.countByExamId(id)
+        if (submissionCount > 0) {
+            throw IllegalArgumentException("该考试已有 $submissionCount 条提交记录，无法删除")
+        }
+
+        // Delete associated exam questions first
+        val examQuestions = examQuestionRepository.findByExamIdOrderBySequence(id)
+        examQuestionRepository.deleteAll(examQuestions)
+
         examRepository.delete(exam)
     }
 
@@ -150,9 +161,8 @@ class ExamServiceImpl(
         return toExamResponse(exam, course.courseName, creator.realName ?: creator.username)
     }
 
-    override fun getAllExams(): List<ExamResponse> {
-        val exams = examRepository.findAll()
-        return exams.map { exam ->
+    override fun getAllExams(pageable: Pageable): Page<ExamResponse> {
+        return examRepository.findAll(pageable).map { exam ->
             val course = courseRepository.findById(exam.courseId).orElseThrow {
                 throw IllegalArgumentException("课程不存在")
             }
@@ -163,9 +173,8 @@ class ExamServiceImpl(
         }
     }
 
-    override fun getExamsByStatus(status: Int): List<ExamResponse> {
-        val exams = examRepository.findByStatus(status)
-        return exams.map { exam ->
+    override fun getExamsByStatus(status: Int, pageable: Pageable): Page<ExamResponse> {
+        return examRepository.findByStatus(status, pageable).map { exam ->
             val course = courseRepository.findById(exam.courseId).orElseThrow {
                 throw IllegalArgumentException("课程不存在")
             }
@@ -176,13 +185,12 @@ class ExamServiceImpl(
         }
     }
 
-    override fun getExamsByCourse(courseId: Long): List<ExamResponse> {
-        val exams = examRepository.findByCourseId(courseId)
+    override fun getExamsByCourse(courseId: Long, pageable: Pageable): Page<ExamResponse> {
         val course = courseRepository.findById(courseId).orElseThrow {
             throw IllegalArgumentException("课程不存在")
         }
 
-        return exams.map { exam ->
+        return examRepository.findByCourseId(courseId, pageable).map { exam ->
             val creator = userRepository.findById(exam.creatorId).orElseThrow {
                 throw IllegalArgumentException("创建者不存在")
             }
@@ -201,6 +209,80 @@ class ExamServiceImpl(
             }
             toExamResponse(exam, course.courseName, creator.realName ?: creator.username)
         }
+    }
+
+    override fun getMyTeachingExams(teacherId: Long, pageable: Pageable): Page<ExamResponse> {
+        val courseIds = courseRepository.findByTeacherId(teacherId).map { it.id ?: 0L }
+        if (courseIds.isEmpty()) return Page.empty(pageable)
+
+        return examRepository.findByCourseIdIn(courseIds, pageable).map { exam ->
+            val course = courseRepository.findById(exam.courseId).orElseThrow {
+                throw IllegalArgumentException("课程不存在")
+            }
+            val creator = userRepository.findById(exam.creatorId).orElseThrow {
+                throw IllegalArgumentException("创建者不存在")
+            }
+            toExamResponse(exam, course.courseName, creator.realName ?: creator.username)
+        }
+    }
+
+    override fun searchExams(
+        creatorId: Long?,
+        status: Int?,
+        courseId: Long?,
+        pageable: Pageable
+    ): Page<ExamResponse> {
+        return examRepository.searchExams(creatorId, status, courseId, pageable).map { exam ->
+            val course = courseRepository.findById(exam.courseId).orElseThrow {
+                throw IllegalArgumentException("课程不存在")
+            }
+            val creator = userRepository.findById(exam.creatorId).orElseThrow {
+                throw IllegalArgumentException("创建者不存在")
+            }
+            toExamResponse(exam, course.courseName, creator.realName ?: creator.username)
+        }
+    }
+
+    override fun patchExam(id: Long, status: Int?, userId: Long, userRole: String): ExamResponse {
+        val exam = examRepository.findById(id).orElseThrow {
+            throw IllegalArgumentException("考试不存在")
+        }
+
+        // Check permission
+        if (userRole != "admin" && exam.creatorId != userId) {
+            throw IllegalArgumentException("您没有权限修改此考试")
+        }
+
+        // Only support status patch for now
+        if (status != null) {
+            when (status) {
+                1 -> {
+                    // Publish
+                    if (exam.status != 0) {
+                        throw IllegalArgumentException("只有草稿状态的考试可以发布")
+                    }
+                    val questionCount = examQuestionRepository.countByExamId(id)
+                    if (questionCount == 0L) {
+                        throw IllegalArgumentException("考试至少需要包含一道题目才能发布")
+                    }
+                    val now = LocalDateTime.now()
+                    if (exam.endTime.isBefore(now)) {
+                        throw IllegalArgumentException("考试结束时间已过，无法发布")
+                    }
+                    exam.status = 1
+                }
+                else -> throw IllegalArgumentException("不支持的状态值: $status")
+            }
+        }
+
+        val patchedExam = examRepository.save(exam)
+        val course = courseRepository.findById(exam.courseId).orElseThrow {
+            throw IllegalArgumentException("课程不存在")
+        }
+        val creator = userRepository.findById(exam.creatorId).orElseThrow {
+            throw IllegalArgumentException("创建者不存在")
+        }
+        return toExamResponse(patchedExam, course.courseName, creator.realName ?: creator.username)
     }
 
     override fun publishExam(id: Long, userId: Long, userRole: String): ExamResponse {

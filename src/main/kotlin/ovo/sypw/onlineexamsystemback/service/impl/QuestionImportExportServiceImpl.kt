@@ -1,7 +1,6 @@
 package ovo.sypw.onlineexamsystemback.service.impl
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import jakarta.servlet.http.HttpServletResponse
 import org.apache.poi.ss.usermodel.*
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import org.springframework.stereotype.Service
@@ -14,7 +13,11 @@ import ovo.sypw.onlineexamsystemback.entity.QuestionBankQuestion
 import ovo.sypw.onlineexamsystemback.repository.QuestionBankQuestionRepository
 import ovo.sypw.onlineexamsystemback.repository.QuestionBankRepository
 import ovo.sypw.onlineexamsystemback.repository.QuestionRepository
+import ovo.sypw.onlineexamsystemback.service.FileService
 import ovo.sypw.onlineexamsystemback.service.QuestionImportExportService
+import java.io.ByteArrayOutputStream
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.*
 
 @Service
@@ -23,7 +26,8 @@ class QuestionImportExportServiceImpl(
     private val questionRepository: QuestionRepository,
     private val questionBankRepository: QuestionBankRepository,
     private val questionBankQuestionRepository: QuestionBankQuestionRepository,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val fileService: FileService
 ) : QuestionImportExportService {
 
     companion object {
@@ -183,32 +187,25 @@ class QuestionImportExportServiceImpl(
         }
     }
 
-    override fun exportQuestionsToExcel(bankId: Long, response: HttpServletResponse) {
-        // Validate bank exists
+    override fun exportQuestionsToExcel(bankId: Long, userId: Long): String {
         val bank = questionBankRepository.findById(bankId).orElseThrow {
             throw IllegalArgumentException("题库不存在")
         }
 
-        // Get all questions in the bank
         val bankQuestions = questionBankQuestionRepository.findByBankId(bankId)
         val questionIds = bankQuestions.map { it.questionId }
         val questions = questionRepository.findAllById(questionIds)
 
-        // Create workbook
         val workbook = XSSFWorkbook()
         val sheet = workbook.createSheet("题目列表")
 
-        // Create header style
         val headerStyle = workbook.createCellStyle().apply {
             fillForegroundColor = IndexedColors.GREY_25_PERCENT.index
             fillPattern = FillPatternType.SOLID_FOREGROUND
-            val font = workbook.createFont().apply {
-                bold = true
-            }
+            val font = workbook.createFont().apply { bold = true }
             setFont(font)
         }
 
-        // Create header row
         val headerRow = sheet.createRow(0)
         val headers = arrayOf("题型", "题目内容", "选项A", "选项B", "选项C", "选项D", "正确答案", "解析", "难度", "分类")
         headers.forEachIndexed { index, header ->
@@ -218,14 +215,11 @@ class QuestionImportExportServiceImpl(
             }
         }
 
-        // Fill data rows
         questions.forEachIndexed { index, question ->
             val row = sheet.createRow(index + 1)
-            
             row.createCell(COL_TYPE).setCellValue(question.type)
             row.createCell(COL_CONTENT).setCellValue(question.content)
 
-            // Parse options
             if (question.options != null) {
                 val optionsMap = objectMapper.readValue(question.options!!, Map::class.java) as Map<String, String>
                 row.createCell(COL_OPTION_A).setCellValue(optionsMap["A"] ?: "")
@@ -240,25 +234,24 @@ class QuestionImportExportServiceImpl(
             row.createCell(COL_TAGS).setCellValue(question.category ?: "")
         }
 
-        // Auto-size columns
         for (i in headers.indices) {
             sheet.autoSizeColumn(i)
         }
 
-        // Set response headers
-        response.contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        response.setHeader("Content-Disposition", "attachment; filename=\"${bank.name}_questions.xlsx\"")
-
-        // Write to response
-        workbook.write(response.outputStream)
+        val outputStream = ByteArrayOutputStream()
+        workbook.write(outputStream)
         workbook.close()
+
+        val date = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"))
+        val fileKey = "exports/questions/${bank.name}_${date}_${UUID.randomUUID()}.xlsx"
+        val response = fileService.uploadBytes(outputStream.toByteArray(), fileKey, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        return response.fileUrl
     }
 
-    override fun downloadImportTemplate(response: HttpServletResponse) {
+    override fun downloadImportTemplate(userId: Long): String {
         val workbook = XSSFWorkbook()
         val sheet = workbook.createSheet("题目导入模板")
 
-        // Create header style
         val headerStyle = workbook.createCellStyle().apply {
             fillForegroundColor = IndexedColors.LIGHT_BLUE.index
             fillPattern = FillPatternType.SOLID_FOREGROUND
@@ -269,7 +262,6 @@ class QuestionImportExportServiceImpl(
             setFont(font)
         }
 
-        // Create header row
         val headerRow = sheet.createRow(0)
         val headers = arrayOf("题型", "题目内容", "选项A", "选项B", "选项C", "选项D", "正确答案", "解析", "难度", "分类")
         headers.forEachIndexed { index, header ->
@@ -279,7 +271,6 @@ class QuestionImportExportServiceImpl(
             }
         }
 
-        // Add example rows
         val examples = listOf(
             arrayOf("single", "Java是什么类型的语言？", "编译型语言", "解释型语言", "混合型语言", "标记语言", "C", "Java是编译+解释的混合型语言", "easy", "Java基础"),
             arrayOf("multiple", "以下哪些是Java关键字？", "class", "Class", "public", "Public", "A,C", "注意大小写", "medium", "关键字"),
@@ -295,17 +286,16 @@ class QuestionImportExportServiceImpl(
             }
         }
 
-        // Auto-size columns
         for (i in headers.indices) {
             sheet.autoSizeColumn(i)
         }
 
-        // Set response headers
-        response.contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        response.setHeader("Content-Disposition", "attachment; filename=\"question_import_template.xlsx\"")
-
-        // Write to response
-        workbook.write(response.outputStream)
+        val outputStream = ByteArrayOutputStream()
+        workbook.write(outputStream)
         workbook.close()
+
+        val fileKey = "templates/question_import_template.xlsx"
+        val response = fileService.uploadBytes(outputStream.toByteArray(), fileKey, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        return response.fileUrl
     }
 }

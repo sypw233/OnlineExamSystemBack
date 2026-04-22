@@ -1,7 +1,11 @@
 package ovo.sypw.onlineexamsystemback.exception
 
+import com.fasterxml.jackson.databind.exc.InvalidDefinitionException
+import com.fasterxml.jackson.databind.exc.MismatchedInputException
 import ovo.sypw.onlineexamsystemback.util.Result
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
+import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.security.authentication.BadCredentialsException
 import org.springframework.security.core.userdetails.UsernameNotFoundException
 import org.springframework.web.bind.MethodArgumentNotValidException
@@ -11,6 +15,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice
 
 @RestControllerAdvice
 class GlobalExceptionHandler {
+
+    private val logger = LoggerFactory.getLogger(GlobalExceptionHandler::class.java)
 
     @ExceptionHandler(BadCredentialsException::class)
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
@@ -31,10 +37,24 @@ class GlobalExceptionHandler {
         return Result.error("参数验证失败: $errors", 400)
     }
 
+    @ExceptionHandler(HttpMessageNotReadableException::class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    fun handleHttpMessageNotReadable(ex: HttpMessageNotReadableException): Result<Nothing> {
+        val cause = ex.cause
+        val message = when {
+            cause is InvalidDefinitionException || cause is MismatchedInputException -> {
+                val path = (cause as? MismatchedInputException)?.path?.joinToString(".") { it.fieldName ?: "[" + it.index + "]" }
+                "请求参数格式错误: ${if (path != null) "字段 [$path] " else ""}${cause.originalMessage}"
+            }
+            else -> "请求体解析失败: ${ex.message}"
+        }
+        return Result.error(message, 400)
+    }
+
     @ExceptionHandler(Exception::class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     fun handleGenericException(ex: Exception): Result<Nothing> {
-        ex.printStackTrace()
+        logger.error("服务器内部错误: ${ex.message}", ex)
         return Result.error("服务器内部错误: ${ex.message}", 500)
     }
 }

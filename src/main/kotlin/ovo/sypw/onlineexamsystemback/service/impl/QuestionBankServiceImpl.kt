@@ -10,6 +10,8 @@ import ovo.sypw.onlineexamsystemback.repository.QuestionBankRepository
 import ovo.sypw.onlineexamsystemback.repository.QuestionRepository
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.service.QuestionBankService
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -98,9 +100,8 @@ class QuestionBankServiceImpl(
         return toQuestionBankResponse(questionBank, creator.realName ?: creator.username)
     }
 
-    override fun getAllQuestionBanks(): List<QuestionBankResponse> {
-        val questionBanks = questionBankRepository.findAll()
-        return questionBanks.map { bank ->
+    override fun getAllQuestionBanks(pageable: Pageable): Page<QuestionBankResponse> {
+        return questionBankRepository.findAll(pageable).map { bank ->
             val creator = userRepository.findById(bank.creatorId).orElseThrow {
                 throw IllegalArgumentException("创建者不存在")
             }
@@ -108,13 +109,12 @@ class QuestionBankServiceImpl(
         }
     }
 
-    override fun getMyQuestionBanks(userId: Long): List<QuestionBankResponse> {
-        val questionBanks = questionBankRepository.findByCreatorId(userId)
+    override fun getMyQuestionBanks(userId: Long, pageable: Pageable): Page<QuestionBankResponse> {
         val creator = userRepository.findById(userId).orElseThrow {
             throw IllegalArgumentException("用户不存在")
         }
 
-        return questionBanks.map { bank ->
+        return questionBankRepository.findByCreatorId(userId, pageable).map { bank ->
             toQuestionBankResponse(bank, creator.realName ?: creator.username)
         }
     }

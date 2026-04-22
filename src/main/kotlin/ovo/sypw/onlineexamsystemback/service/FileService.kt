@@ -35,4 +35,13 @@ interface FileService {
      * @return Public URL
      */
     fun getFileUrl(fileKey: String): String
+
+    /**
+     * Upload raw bytes to BOS
+     * @param data File bytes
+     * @param fileKey Target file key
+     * @param contentType MIME type
+     * @return Upload response with file URL
+     */
+    fun uploadBytes(data: ByteArray, fileKey: String, contentType: String): FileUploadResponse
 }

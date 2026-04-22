@@ -5,9 +5,11 @@ import java.time.LocalDateTime
 data class UserResponse(
     val id: Long,
     val username: String,
+    val nickname: String?,
     val realName: String?,
     val role: String,
     val email: String?,
+    val avatar: String?,
     val status: Int,
     val createTime: LocalDateTime
 )

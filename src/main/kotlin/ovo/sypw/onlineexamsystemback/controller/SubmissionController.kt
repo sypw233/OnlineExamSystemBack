@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
+import io.swagger.v3.oas.annotations.media.Schema
 import ovo.sypw.onlineexamsystemback.dto.request.GradeRequest
 import ovo.sypw.onlineexamsystemback.dto.request.ProctoringEventRequest
 import ovo.sypw.onlineexamsystemback.dto.request.SubmissionRequest
@@ -12,6 +13,8 @@ import ovo.sypw.onlineexamsystemback.dto.response.SubmissionResponse
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.service.SubmissionService
 import ovo.sypw.onlineexamsystemback.util.Result
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.PageRequest
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.*
 
@@ -22,60 +25,6 @@ class SubmissionController(
     private val submissionService: SubmissionService,
     private val userRepository: UserRepository
 ) {
-
-    @PostMapping("/start")
-    @Operation(
-        summary = "开始考试",
-        description = """
-            学生点击"开始考试"按钮时调用此接口
-            
-            ## 功能说明
-            - 创建考试答题记录（状态=答题中）
-            - 记录开始时间
-            - 验证考试有效性（已发布、时间范围内）
-            - 如果已经开始过，返回现有记录
-            
-            ## 验证规则
-            - 考试必须已发布（status=1）
-            - 当前时间必须在考试时间范围内
-            - 每个学生每场考试只能有一条答题记录
-            
-            ## 请求示例
-            ```
-            POST /api/submissions/start?examId=1
-            ```
-            
-            ## 响应
-            返回创建的答题记录，包含：
-            - submissionId: 答题记录ID
-            - status: 0（答题中）
-            - startTime: 开始时间
-            - examTitle: 考试标题
-        """,
-        security = [SecurityRequirement(name = "Bearer Authentication")]
-    )
-    fun startExam(
-        @Parameter(
-            description = "考试ID",
-            example = "1",
-            required = true
-        )
-        @RequestParam examId: Long
-    ): Result<SubmissionResponse> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
-        return try {
-            val submission = submissionService.startExam(examId, user.id ?: 0L)
-            Result.success(submission, "考试已开始")
-        } catch (e: IllegalArgumentException) {
-            Result.error(e.message ?: "开始失败", 400)
-        }
-    }
 
     @PostMapping
     @Operation(
@@ -161,15 +110,18 @@ class SubmissionController(
         }
     }
 
-    @GetMapping("/exam/{examId}")
+    @GetMapping
     @Operation(
-        summary = "获取考试的所有提交记录",
-        description = "教师查看自己考试的提交，管理员可查看所有考试提交",
+        summary = "查询提交记录",
+        description = "按考试或学生查询提交记录。学生只能查看自己的成绩，教师/管理员可查看任何记录。支持分页。",
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
-    fun getExamSubmissions(
-        @Parameter(description = "考试ID", example = "1") @PathVariable examId: Long
-    ): Result<List<SubmissionResponse>> {
+    fun getSubmissions(
+        @Parameter(description = "考试ID") @RequestParam(required = false) examId: Long?,
+        @Parameter(description = "用户ID") @RequestParam(required = false) userId: Long?,
+        @Parameter(description = "页码", example = "0") @RequestParam(defaultValue = "0") page: Int,
+        @Parameter(description = "每页条数", example = "20") @RequestParam(defaultValue = "20") size: Int
+    ): Result<Page<SubmissionResponse>> {
         val authentication = SecurityContextHolder.getContext().authentication
             ?: return Result.error("未登录", 401)
 
@@ -177,41 +129,50 @@ class SubmissionController(
         val user = userRepository.findByUsername(username)
             ?: return Result.error("用户不存在", 404)
 
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以查看考试提交记录", 403)
+        val pageable = PageRequest.of(page, size.coerceAtMost(100))
+
+        // Student can only view their own
+        if (user.role == "student") {
+            if (examId != null) {
+                // Check if student has a submission for this exam
+                return try {
+                    val submission = submissionService.getUserSubmissions(user.id ?: 0L, pageable)
+                        .content.firstOrNull { it.examId == examId }
+                        ?.let { org.springframework.data.domain.PageImpl(listOf(it), pageable, 1) }
+                        ?: org.springframework.data.domain.PageImpl(emptyList<SubmissionResponse>(), pageable, 0)
+                    Result.success(submission)
+                } catch (e: IllegalArgumentException) {
+                    Result.error(e.message ?: "查询失败", 400)
+                }
+            }
+            return try {
+                val submissions = submissionService.getUserSubmissions(user.id ?: 0L, pageable)
+                Result.success(submissions)
+            } catch (e: IllegalArgumentException) {
+                Result.error(e.message ?: "查询失败", 400)
+            }
         }
 
-        return try {
-            val submissions = submissionService.getExamSubmissions(examId, user.id ?: 0L, user.role)
-            Result.success(submissions)
-        } catch (e: IllegalArgumentException) {
-            Result.error(e.message ?: "查询失败", 400)
-        }
-    }
-
-    @GetMapping("/user/{userId}")
-    @Operation(
-        summary = "获取学生的所有成绩",
-        description = "学生查看自己的成绩，教师/管理员可查看任何学生成绩",
-        security = [SecurityRequirement(name = "Bearer Authentication")]
-    )
-    fun getUserSubmissions(
-        @Parameter(description = "用户ID", example = "1") @PathVariable userId: Long
-    ): Result<List<SubmissionResponse>> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
-        // Students can only view their own submissions
-        if (user.role == "student" && user.id != userId) {
-            return Result.error("您只能查看自己的成绩", 403)
+        // Teacher / Admin
+        if (examId != null) {
+            return try {
+                val submissions = submissionService.getExamSubmissions(examId, user.id ?: 0L, user.role, pageable)
+                Result.success(submissions)
+            } catch (e: IllegalArgumentException) {
+                Result.error(e.message ?: "查询失败", 400)
+            }
         }
 
-        val submissions = submissionService.getUserSubmissions(userId)
-        return Result.success(submissions)
+        if (userId != null) {
+            return try {
+                val submissions = submissionService.getUserSubmissions(userId, pageable)
+                Result.success(submissions)
+            } catch (e: IllegalArgumentException) {
+                Result.error(e.message ?: "查询失败", 400)
+            }
+        }
+
+        return Result.error("请提供 examId 或 userId 参数", 400)
     }
 
     @PostMapping("/{id}/grade")

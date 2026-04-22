@@ -1,6 +1,7 @@
 package ovo.sypw.onlineexamsystemback.dto.request
 
 import io.swagger.v3.oas.annotations.media.Schema
+import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 
 @Schema(description = "监考事件记录请求")
@@ -12,15 +13,16 @@ data class ProctoringEventRequest(
         required = true
     )
     val examId: Long? = null,
-    
+
+    @field:NotBlank(message = "事件类型不能为空")
     @Schema(
         description = "事件类型",
         example = "tab_switch",
         allowableValues = ["tab_switch", "exit_fullscreen", "blur"],
         required = true
     )
-    val eventType: String,
-    
+    val eventType: String = "",
+
     @Schema(
         description = "事件详情",
         example = "切换到其他标签页"

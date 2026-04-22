@@ -8,7 +8,10 @@ import java.time.LocalDateTime
 data class NotificationResponse(
     @Schema(description = "通知ID", example = "1")
     val id: Long,
-    
+
+    @Schema(description = "用户ID", example = "1")
+    val userId: Long,
+
     @Schema(description = "通知类型", example = "EXAM_PUBLISHED")
     val type: NotificationType,
     

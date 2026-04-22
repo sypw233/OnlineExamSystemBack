@@ -80,6 +80,9 @@ class FileServiceImpl(
     }
 
     override fun deleteFile(fileKey: String, userId: Long, userRole: String) {
+        if (userRole != "admin" && userRole != "teacher") {
+            throw IllegalArgumentException("无权删除文件")
+        }
         try {
             bosClient.deleteObject(bosProperties.bucketName, fileKey)
         } catch (e: Exception) {
@@ -88,8 +91,31 @@ class FileServiceImpl(
     }
 
     override fun getFileUrl(fileKey: String): String {
-        // Public read URL format
         return "https://${bosProperties.bucketName}.${bosProperties.endpoint}/${fileKey}"
+    }
+
+    override fun uploadBytes(data: ByteArray, fileKey: String, contentType: String): FileUploadResponse {
+        try {
+            val metadata = ObjectMetadata()
+            metadata.contentType = contentType
+            metadata.contentLength = data.size.toLong()
+
+            bosClient.putObject(
+                bosProperties.bucketName,
+                fileKey,
+                data.inputStream(),
+                metadata
+            )
+
+            return FileUploadResponse(
+                fileKey = fileKey,
+                fileUrl = getFileUrl(fileKey),
+                fileName = fileKey.substringAfterLast("/"),
+                fileSize = data.size.toLong()
+            )
+        } catch (e: Exception) {
+            throw IllegalArgumentException("文件上传失败: ${e.message}")
+        }
     }
 
     /**
@@ -104,17 +130,52 @@ class FileServiceImpl(
         if (file.isEmpty) {
             throw IllegalArgumentException("文件不能为空")
         }
-        
+
         val contentType = file.contentType
         if (contentType == null || !allowedTypes.contains(contentType.lowercase())) {
             throw IllegalArgumentException(
                 "不支持的${fileTypeLabel}格式: $contentType。支持的格式: ${allowedTypes.joinToString()}"
             )
         }
-        
+
+        validateMagicBytes(file, allowedTypes, fileTypeLabel)
+
         if (file.size > maxSize) {
             val maxSizeMB = maxSize / (1024 * 1024)
             throw IllegalArgumentException("${fileTypeLabel}大小不能超过 ${maxSizeMB}MB")
+        }
+    }
+
+    /**
+     * Validate file by magic bytes to prevent MIME type spoofing
+     */
+    private fun validateMagicBytes(file: MultipartFile, allowedTypes: Set<String>, fileTypeLabel: String) {
+        val header = file.inputStream.use { it.readNBytes(8) }
+        if (header.size < 4) return
+
+        val detectedFormats = mutableListOf<String>()
+
+        when {
+            header[0] == 0xFF.toByte() && header[1] == 0xD8.toByte() -> detectedFormats.add("image/jpeg")
+            header[0] == 0x89.toByte() && header[1] == 0x50.toByte() && header[2] == 0x4E.toByte() && header[3] == 0x47.toByte() -> detectedFormats.add("image/png")
+            header[0] == 0x47.toByte() && header[1] == 0x49.toByte() && header[2] == 0x46.toByte() && header[3] == 0x38.toByte() -> detectedFormats.add("image/gif")
+            header[0] == 0x42.toByte() && header[1] == 0x4D.toByte() -> detectedFormats.add("image/bmp")
+            header[0] == 0x52.toByte() && header[1] == 0x49.toByte() && header[2] == 0x46.toByte() && header[3] == 0x46.toByte() -> detectedFormats.add("image/webp")
+            header[0] == 0x25.toByte() && header[1] == 0x50.toByte() && header[2] == 0x44.toByte() && header[3] == 0x46.toByte() -> detectedFormats.add("application/pdf")
+            header[0] == 0x50.toByte() && header[1] == 0x4B.toByte() && header[2] == 0x03.toByte() && header[3] == 0x04.toByte() -> detectedFormats.add("application/zip")
+        }
+
+        if (detectedFormats.isNotEmpty()) {
+            val hasMatch = detectedFormats.any { fmt ->
+                when (fmt) {
+                    "image/jpeg" -> allowedTypes.contains("image/jpeg") || allowedTypes.contains("image/jpg")
+                    "application/zip" -> allowedTypes.contains("application/zip") || allowedTypes.any { it.contains("officedocument") || it.contains("opendocument") }
+                    else -> allowedTypes.contains(fmt)
+                }
+            }
+            if (!hasMatch) {
+                throw IllegalArgumentException("${fileTypeLabel}文件实际格式与声明的类型不符，可能存在安全风险")
+            }
         }
     }
 

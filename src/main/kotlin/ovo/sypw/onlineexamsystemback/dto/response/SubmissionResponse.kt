@@ -52,5 +52,8 @@ data class SubmissionResponse(
     val submitTime: LocalDateTime?,
     
     @Schema(description = "评分详情（JSON）")
-    val submitDetail: String?
+    val submitDetail: String?,
+
+    @Schema(description = "监考数据（JSON）")
+    val proctoringData: String?
 )

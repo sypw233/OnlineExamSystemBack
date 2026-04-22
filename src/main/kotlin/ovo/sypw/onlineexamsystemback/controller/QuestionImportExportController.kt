@@ -4,7 +4,6 @@ import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
-import jakarta.servlet.http.HttpServletResponse
 import ovo.sypw.onlineexamsystemback.dto.response.ImportResultResponse
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.service.QuestionImportExportService
@@ -14,7 +13,7 @@ import org.springframework.web.bind.annotation.*
 import org.springframework.web.multipart.MultipartFile
 
 @RestController
-@RequestMapping("/api/questions")
+@RequestMapping("/api/question-import-export")
 @Tag(name = "题目导入导出", description = "Excel批量导入导出题目")
 class QuestionImportExportController(
     private val questionImportExportService: QuestionImportExportService,
@@ -45,17 +44,6 @@ class QuestionImportExportController(
             9. 难度（easy/medium/hard）
             10. 标签（逗号分隔）
             
-            ## 数据验证
-            - 题型有效性检查
-            - 选项完整性（单选/多选必须4个选项）
-            - 答案格式验证
-            - 必填字段检查
-            
-            ## 错误处理
-            - 导入失败的行会在errors中列出
-            - 成功的行会正常导入
-            - 最多返回前20个错误
-            
             ## 权限
             - 仅教师和管理员可导入
         """,
@@ -75,12 +63,10 @@ class QuestionImportExportController(
         val user = userRepository.findByUsername(username)
             ?: return Result.error("用户不存在", 404)
 
-        // Only teacher and admin can import
         if (user.role != "teacher" && user.role != "admin") {
             return Result.error("只有教师和管理员可以导入题目", 403)
         }
 
-        // Validate file
         if (file.isEmpty) {
             return Result.error("文件不能为空", 400)
         }
@@ -112,17 +98,7 @@ class QuestionImportExportController(
             ## 功能说明
             - 导出指定题库的全部题目
             - Excel格式，包含所有题目信息
-            - 文件名格式：{题库名}_questions.xlsx
-            
-            ## 导出内容
-            - 题型、题目内容、选项
-            - 答案、解析
-            - 难度、标签
-            
-            ## 用途
-            - 备份题库
-            - 分享题目
-            - 在其他系统中使用
+            - 返回文件下载URL
             
             ## 权限
             - 仅教师和管理员可导出
@@ -131,23 +107,27 @@ class QuestionImportExportController(
     )
     fun exportQuestions(
         @Parameter(description = "题库ID", example = "1", required = true)
-        @RequestParam("bankId") bankId: Long,
-        
-        response: HttpServletResponse
-    ) {
+        @RequestParam("bankId") bankId: Long
+    ): Result<String> {
         val authentication = SecurityContextHolder.getContext().authentication
-            ?: throw IllegalStateException("未登录")
+            ?: return Result.error("未登录", 401)
 
         val username = authentication.name
         val user = userRepository.findByUsername(username)
-            ?: throw IllegalStateException("用户不存在")
+            ?: return Result.error("用户不存在", 404)
 
-        // Only teacher and admin can export
         if (user.role != "teacher" && user.role != "admin") {
-            throw IllegalArgumentException("只有教师和管理员可以导出题库")
+            return Result.error("只有教师和管理员可以导出题库", 403)
         }
 
-        questionImportExportService.exportQuestionsToExcel(bankId, response)
+        return try {
+            val url = questionImportExportService.exportQuestionsToExcel(bankId, user.id ?: 0L)
+            Result.success(url, "导出成功")
+        } catch (e: IllegalArgumentException) {
+            Result.error(e.message ?: "导出失败", 400)
+        } catch (e: Exception) {
+            Result.error("导出失败: ${e.message}", 500)
+        }
     }
 
     @GetMapping("/template")
@@ -159,38 +139,30 @@ class QuestionImportExportController(
             ## 功能说明
             - 下载预设格式的Excel模板
             - 包含示例数据
-            - 包含各种题型示例
-            
-            ## 模板内容
-            - 正确的列名和顺序
-            - 5个示例题目（单选、多选、判断、填空、简答）
-            - 格式说明
-            
-            ## 使用方法
-            1. 下载模板
-            2. 按照示例填写题目
-            3. 上传导入
+            - 返回文件下载URL
             
             ## 权限
             - 所有教师和管理员可下载
         """,
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
-    fun downloadTemplate(
-        response: HttpServletResponse
-    ) {
+    fun downloadTemplate(): Result<String> {
         val authentication = SecurityContextHolder.getContext().authentication
-            ?: throw IllegalStateException("未登录")
+            ?: return Result.error("未登录", 401)
 
         val username = authentication.name
         val user = userRepository.findByUsername(username)
-            ?: throw IllegalStateException("用户不存在")
+            ?: return Result.error("用户不存在", 404)
 
-        // Only teacher and admin can download template
         if (user.role != "teacher" && user.role != "admin") {
-            throw IllegalArgumentException("只有教师和管理员可以下载模板")
+            return Result.error("只有教师和管理员可以下载模板", 403)
         }
 
-        questionImportExportService.downloadImportTemplate(response)
+        return try {
+            val url = questionImportExportService.downloadImportTemplate(user.id ?: 0L)
+            Result.success(url, "模板生成成功")
+        } catch (e: Exception) {
+            Result.error("模板生成失败: ${e.message}", 500)
+        }
     }
 }

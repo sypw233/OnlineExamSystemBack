@@ -11,6 +11,8 @@ import ovo.sypw.onlineexamsystemback.dto.response.EnrollmentResponse
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.service.CourseService
 import ovo.sypw.onlineexamsystemback.util.Result
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.PageRequest
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.*
 
@@ -45,17 +47,43 @@ class CourseController(
     }
 
     @GetMapping
-    @Operation(summary = "获取所有活跃课程", description = "获取所有状态为活跃的课程列表")
-    fun getAllActiveCourses(): Result<List<CourseResponse>> {
-        val courses = courseService.getAllActiveCourses()
+    @Operation(
+        summary = "获取所有活跃课程",
+        description = "获取所有状态为活跃的课程列表，支持分页",
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
+    fun getAllActiveCourses(
+        @Parameter(description = "页码", example = "0") @RequestParam(defaultValue = "0") page: Int,
+        @Parameter(description = "每页条数", example = "20") @RequestParam(defaultValue = "20") size: Int
+    ): Result<Page<CourseResponse>> {
+        val authentication = SecurityContextHolder.getContext().authentication
+            ?: return Result.error("未登录", 401)
+
+        val username = authentication.name
+        val user = userRepository.findByUsername(username)
+            ?: return Result.error("用户不存在", 404)
+
+        val pageable = PageRequest.of(page, size.coerceAtMost(100))
+        val courses = courseService.getAllActiveCourses(pageable)
         return Result.success(courses)
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "获取课程详情", description = "根据ID获取课程详细信息")
+    @Operation(
+        summary = "获取课程详情",
+        description = "根据ID获取课程详细信息",
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
     fun getCourseById(
         @Parameter(description = "课程ID") @PathVariable id: Long
     ): Result<CourseResponse> {
+        val authentication = SecurityContextHolder.getContext().authentication
+            ?: return Result.error("未登录", 401)
+
+        val username = authentication.name
+        val user = userRepository.findByUsername(username)
+            ?: return Result.error("用户不存在", 404)
+
         return try {
             val course = courseService.getCourseById(id)
             Result.success(course)

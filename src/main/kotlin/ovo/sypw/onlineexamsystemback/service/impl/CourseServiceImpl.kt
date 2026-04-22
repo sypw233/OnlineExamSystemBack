@@ -9,6 +9,8 @@ import ovo.sypw.onlineexamsystemback.repository.CourseRepository
 import ovo.sypw.onlineexamsystemback.repository.CourseSelectionRepository
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.service.CourseService
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -94,9 +96,8 @@ class CourseServiceImpl(
         return toCourseResponse(course, teacher.realName ?: teacher.username)
     }
 
-    override fun getAllActiveCourses(): List<CourseResponse> {
-        val courses = courseRepository.findByStatusOrderByCreateTimeDesc(1)
-        return courses.map { course ->
+    override fun getAllActiveCourses(pageable: Pageable): Page<CourseResponse> {
+        return courseRepository.findByStatusOrderByCreateTimeDesc(1, pageable).map { course ->
             val teacher = userRepository.findById(course.teacherId).orElseThrow {
                 throw IllegalArgumentException("教师不存在")
             }

@@ -5,11 +5,14 @@ import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
+import io.swagger.v3.oas.annotations.media.Schema
 import ovo.sypw.onlineexamsystemback.dto.request.QuestionRequest
 import ovo.sypw.onlineexamsystemback.dto.response.QuestionResponse
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.service.QuestionService
 import ovo.sypw.onlineexamsystemback.util.Result
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.PageRequest
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.*
 
@@ -66,12 +69,38 @@ class QuestionController(
 
     @GetMapping
     @Operation(
-        summary = "获取所有题目",
-        description = "获取所有题目列表",
+        summary = "查询题目列表",
+        description = "管理员获取全部题目，教师仅获取自己创建的题目。支持按类型、难度、分类筛选，支持分页。",
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
-    fun getAllQuestions(): Result<List<QuestionResponse>> {
-        val questions = questionService.getAllQuestions()
+    fun getAllQuestions(
+        @Parameter(description = "页码", example = "0")
+        @RequestParam(defaultValue = "0") page: Int,
+        @Parameter(description = "每页条数", example = "20")
+        @RequestParam(defaultValue = "20") size: Int,
+        @Parameter(description = "题目类型", schema = Schema(allowableValues = ["single", "multiple", "true_false", "fill_blank", "short_answer"]))
+        @RequestParam(required = false) type: String?,
+        @Parameter(description = "难度等级", schema = Schema(allowableValues = ["easy", "medium", "hard"]))
+        @RequestParam(required = false) difficulty: String?,
+        @Parameter(description = "分类")
+        @RequestParam(required = false) category: String?
+    ): Result<Page<QuestionResponse>> {
+        val authentication = SecurityContextHolder.getContext().authentication
+            ?: return Result.error("未登录", 401)
+
+        val username = authentication.name
+        val user = userRepository.findByUsername(username)
+            ?: return Result.error("用户不存在", 404)
+
+        val pageable = PageRequest.of(page, size.coerceAtMost(100))
+        val creatorId = if (user.role == "admin") null else user.id
+        val questions = questionService.searchQuestions(
+            creatorId = creatorId,
+            type = type,
+            difficulty = difficulty,
+            category = category,
+            pageable = pageable
+        )
         return Result.success(questions)
     }
 
@@ -84,6 +113,13 @@ class QuestionController(
     fun getQuestionById(
         @Parameter(description = "题目ID") @PathVariable id: Long
     ): Result<QuestionResponse> {
+        val authentication = SecurityContextHolder.getContext().authentication
+            ?: return Result.error("未登录", 401)
+
+        val username = authentication.name
+        val user = userRepository.findByUsername(username)
+            ?: return Result.error("用户不存在", 404)
+
         return try {
             val question = questionService.getQuestionById(id)
             Result.success(question)
@@ -141,74 +177,4 @@ class QuestionController(
         }
     }
 
-    @GetMapping("/my")
-    @Operation(
-        summary = "获取我的题目",
-        description = "获取当前用户创建的所有题目",
-        security = [SecurityRequirement(name = "Bearer Authentication")]
-    )
-    fun getMyQuestions(): Result<List<QuestionResponse>> {
-        val authentication = SecurityContextHolder.getContext().authentication
-            ?: return Result.error("未登录", 401)
-
-        val username = authentication.name
-        val user = userRepository.findByUsername(username)
-            ?: return Result.error("用户不存在", 404)
-
-        val questions = questionService.getMyQuestions(user.id ?: 0L)
-        return Result.success(questions)
-    }
-
-    @GetMapping("/type/{type}")
-    @Operation(
-        summary = "按类型筛选题目",
-        description = "获取指定类型的题目列表。可选值: single, multiple, true_false, fill_blank, short_answer",
-        security = [SecurityRequirement(name = "Bearer Authentication")]
-    )
-    fun getQuestionsByType(
-        @Parameter(
-            description = "题目类型",
-            example = "single",
-            schema = io.swagger.v3.oas.annotations.media.Schema(
-                allowableValues = ["single", "multiple", "true_false", "fill_blank", "short_answer"]
-            )
-        )
-        @PathVariable type: String
-    ): Result<List<QuestionResponse>> {
-        val questions = questionService.getQuestionsByType(type)
-        return Result.success(questions)
-    }
-
-    @GetMapping("/difficulty/{difficulty}")
-    @Operation(
-        summary = "按难度筛选题目",
-        description = "获取指定难度的题目列表。可选值: easy(简单), medium(中等), hard(困难)",
-        security = [SecurityRequirement(name = "Bearer Authentication")]
-    )
-    fun getQuestionsByDifficulty(
-        @Parameter(
-            description = "难度等级",
-            example = "easy",
-            schema = io.swagger.v3.oas.annotations.media.Schema(
-                allowableValues = ["easy", "medium", "hard"]
-            )
-        )
-        @PathVariable difficulty: String
-    ): Result<List<QuestionResponse>> {
-        val questions = questionService.getQuestionsByDifficulty(difficulty)
-        return Result.success(questions)
-    }
-
-    @GetMapping("/category/{category}")
-    @Operation(
-        summary = "按分类筛选题目",
-        description = "获取指定分类的题目列表",
-        security = [SecurityRequirement(name = "Bearer Authentication")]
-    )
-    fun getQuestionsByCategory(
-        @Parameter(description = "分类") @PathVariable category: String
-    ): Result<List<QuestionResponse>> {
-        val questions = questionService.getQuestionsByCategory(category)
-        return Result.success(questions)
-    }
 }

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateTimeDeserializer
 import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Primary
@@ -25,6 +26,9 @@ class JacksonConfig {
     @Primary
     fun objectMapper(): ObjectMapper {
         val objectMapper = ObjectMapper()
+        
+        // 注册 Kotlin 模块（支持默认值、可空类型、data class 等）
+        objectMapper.registerKotlinModule()
         
         // 注册 Java 8 时间模块
         val javaTimeModule = JavaTimeModule()
