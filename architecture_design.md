@@ -136,11 +136,18 @@ ovo.sypw.onlineexamsystem
 - 角色权限管理（管理员、教师、学生）
 
 **核心接口**:
-- `POST /api/users/register` - 用户注册
-- `POST /api/users/login` - 用户登录
-- `GET /api/users/{id}` - 获取用户信息
-- `PUT /api/users/{id}` - 更新用户信息
-- `GET /api/users` - 获取用户列表（管理员）
+- `POST /api/auth/register` - 用户注册
+- `POST /api/auth/login` - 用户登录
+- `POST /api/auth/refresh` - 刷新Token
+- `GET /api/auth/me` - 获取当前用户信息
+- `GET /api/admin/users` - 分页查询用户列表（管理员）
+- `GET /api/admin/users/{id}` - 获取用户详情（管理员）
+- `POST /api/admin/users` - 创建用户（管理员）
+- `PUT /api/admin/users/{id}` - 更新用户信息（管理员）
+- `DELETE /api/admin/users/{id}` - 删除用户（管理员）
+- `PUT /api/admin/users/{id}/reset-password` - 重置密码（管理员）
+- `PUT /api/admin/users/{id}/enable` - 启用用户（管理员）
+- `PUT /api/admin/users/{id}/disable` - 禁用用户（管理员）
 
 ### 2. 课程管理模块 (Course Management)
 
@@ -151,11 +158,17 @@ ovo.sypw.onlineexamsystem
 
 **核心接口**:
 - `POST /api/courses` - 创建课程
-- `GET /api/courses` - 获取课程列表
+- `GET /api/courses` - 获取课程列表（分页）
 - `GET /api/courses/{id}` - 获取课程详情
 - `PUT /api/courses/{id}` - 更新课程
 - `DELETE /api/courses/{id}` - 删除课程
+- `GET /api/courses/my` - 获取我的课程
 - `POST /api/courses/{id}/enroll` - 学生选课
+- `POST /api/courses/{id}/students/{studentId}` - 添加学生到课程（教师/管理员）
+- `POST /api/courses/{id}/students` - 批量添加学生到课程（教师/管理员）
+- `DELETE /api/courses/{id}/students/{studentId}` - 移除学生/学生退课
+- `GET /api/courses/{id}/students` - 获取选课学生列表
+- `GET /api/courses/my-enrollments` - 获取我的选课记录
 
 ### 3. 题库管理模块 (Question Bank Management)
 
@@ -167,10 +180,16 @@ ovo.sypw.onlineexamsystem
 
 **核心接口**:
 - `POST /api/question-banks` - 创建题库
-- `GET /api/question-banks` - 获取题库列表
-- `POST /api/question-banks/{id}/questions` - 添加题目到题库
+- `GET /api/question-banks` - 获取题库列表（分页）
+- `GET /api/question-banks/{id}` - 获取题库详情
+- `PUT /api/question-banks/{id}` - 更新题库
+- `DELETE /api/question-banks/{id}` - 删除题库
+- `POST /api/question-banks/{id}/questions/{questionId}` - 添加题目到题库
+- `DELETE /api/question-banks/{id}/questions/{questionId}` - 从题库移除题目
+- `GET /api/question-banks/{id}/questions` - 获取题库中的所有题目
 - `POST /api/questions` - 创建题目
-- `GET /api/questions` - 获取题目列表
+- `GET /api/questions` - 获取题目列表（分页）
+- `GET /api/questions/{id}` - 获取题目详情
 - `PUT /api/questions/{id}` - 更新题目
 - `DELETE /api/questions/{id}` - 删除题目
 
@@ -184,11 +203,15 @@ ovo.sypw.onlineexamsystem
 
 **核心接口**:
 - `POST /api/exams` - 创建考试
-- `GET /api/exams` - 获取考试列表
+- `GET /api/exams` - 获取考试列表（分页）
 - `GET /api/exams/{id}` - 获取考试详情
 - `PUT /api/exams/{id}` - 更新考试
-- `POST /api/exams/{id}/publish` - 发布考试
+- `PATCH /api/exams/{id}?status=1` - 发布考试（修改状态）
+- `DELETE /api/exams/{id}` - 删除考试
+- `POST /api/exams/{id}/submissions` - 开始考试（学生）
 - `POST /api/exams/{id}/questions` - 添加题目到考试
+- `DELETE /api/exams/{id}/questions/{questionId}` - 从考试移除题目
+- `GET /api/exams/{id}/questions` - 获取考试的所有题目
 
 ### 5. 答题评分模块 (Submission & Grading)
 
@@ -201,10 +224,10 @@ ovo.sypw.onlineexamsystem
 
 **核心接口**:
 - `POST /api/submissions` - 提交答案
-- `GET /api/submissions/exam/{examId}` - 获取考试提交记录
+- `GET /api/submissions` - 查询提交记录（支持 examId/userId 筛选，分页）
 - `GET /api/submissions/{id}` - 获取提交详情
 - `POST /api/submissions/{id}/grade` - 主观题评分
-- `GET /api/submissions/user/{userId}` - 获取学生成绩
+- `POST /api/submissions/proctoring` - 记录监考事件
 
 ### 6. 文件上传模块 (File Upload)
 
@@ -215,9 +238,10 @@ ovo.sypw.onlineexamsystem
 - 文件访问控制
 
 **核心接口**:
-- `POST /api/files/upload` - 上传文件
-- `GET /api/files/{id}` - 下载/访问文件
-- `DELETE /api/files/{id}` - 删除文件
+- `POST /api/files/image` - 上传图片
+- `POST /api/files/document` - 上传文档
+- `GET /api/files/url/{fileKey}` - 获取文件访问URL
+- `DELETE /api/files/{fileKey}` - 删除文件
 
 **技术实现**:
 - 文件存储：本地文件系统（可扩展为OSS）
@@ -365,71 +389,7 @@ CREATE INDEX idx_notifications_is_read ON notifications(user_id, is_read);
 
 ---
 
-### 10. 考试日程管理 (Exam Scheduling)
-
-**功能**:
-- 我的考试日程列表
-- 日历视图展示
-- 考试状态分类（即将开始、进行中、已结束）
-- 考试倒计时
-- 即将到来的考试提醒
-
-**核心接口**:
-- `GET /api/schedule/my-exams` - 我的考试日程
-- `GET /api/schedule/calendar` - 月度日历数据
-- `GET /api/schedule/upcoming` - 即将到来的考试（未来7天）
-- `GET /api/schedule/{examId}/countdown` - 考试倒计时
-
-**日程状态**:
-```kotlin
-enum class ExamScheduleStatus {
-    UPCOMING,       // 即将开始（未开始）
-    IN_PROGRESS,    // 进行中
-    COMPLETED,      // 已结束（未提交）
-    SUBMITTED       // 已提交
-}
-```
-
-**响应数据结构**:
-```json
-{
-  "examId": 1,
-  "examTitle": "Java期中考试",
-  "courseName": "Java程序设计",
-  "startTime": "2024-12-01 10:00:00",
-  "endTime": "2024-12-01 12:00:00",
-  "duration": 120,
-  "status": "UPCOMING",
-  "countdown": "距离开始还有2小时30分",
-  "isSubmitted": false
-}
-```
-
-**日历视图数据**:
-```json
-{
-  "year": 2024,
-  "month": 12,
-  "days": [
-    {
-      "date": "2024-12-01",
-      "exams": [
-        {"examId": 1, "title": "Java期中", "startTime": "10:00"}
-      ]
-    }
-  ]
-}
-```
-
-**前端展示**:
-- 时间轴视图（按时间排序）
-- 日历视图（月度/周度）
-- 状态筛选（全部/进行中/即将开始）
-- 倒计时实时更新
-
----
-
-### 11. 题目导入导出 (Question Import/Export)
+### 10. 题目导入导出 (Question Import/Export)
 
 **功能**:
 - Excel批量导入题目
@@ -439,10 +399,9 @@ enum class ExamScheduleStatus {
 - 导入结果验证与错误报告
 
 **核心接口**:
-- `POST /api/questions/import` - 导入题目（Multipart）
-- `GET /api/questions/export?bankId={id}` - 导出题库
-- `GET /api/questions/template` - 下载导入模板
-- `GET /api/questions/import-result/{taskId}` - 查询导入结果
+- `POST /api/question-import-export/import` - 导入题目（Multipart）
+- `GET /api/question-import-export/export?bankId={id}` - 导出题库
+- `GET /api/question-import-export/template` - 下载导入模板
 
 **Excel导入格式**:
 | 列名 | 说明 | 示例 |
@@ -511,7 +470,7 @@ implementation("org.apache.poi:poi:5.2.5")
 
 ---
 
-### 12. JWT认证模块 (JWT Authentication)
+### 11. JWT认证模块 (JWT Authentication)
 
 **功能**:
 - 用户登录认证
@@ -521,9 +480,13 @@ implementation("org.apache.poi:poi:5.2.5")
 
 **核心接口**:
 - `POST /api/auth/login` - 用户登录（返回Token）
+- `POST /api/auth/register` - 用户注册
 - `POST /api/auth/refresh` - 刷新Token
-- `POST /api/auth/logout` - 退出登录
 - `GET /api/auth/me` - 获取当前用户信息
+- `POST /api/auth/change-password` - 修改密码
+- `PUT /api/auth/profile` - 修改个人信息
+
+> **注意**: 系统采用无状态 JWT 认证，登出由前端清除本地 Token 实现，后端不提供 `logout` 接口。
 
 **Token配置**:
 - 访问Token有效期：2小时

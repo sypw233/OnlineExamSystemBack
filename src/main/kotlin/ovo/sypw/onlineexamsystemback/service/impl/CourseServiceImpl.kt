@@ -220,6 +220,88 @@ class CourseServiceImpl(
         }
     }
 
+    override fun addStudentToCourse(
+        courseId: Long,
+        studentId: Long,
+        operatorId: Long,
+        operatorRole: String
+    ): EnrollmentResponse {
+        // Check course exists
+        val course = courseRepository.findById(courseId).orElseThrow {
+            throw IllegalArgumentException("课程不存在")
+        }
+
+        // Check permission: admin or course teacher
+        if (operatorRole != "admin" && course.teacherId != operatorId) {
+            throw IllegalArgumentException("您没有权限为此课程添加学生")
+        }
+
+        // Check student exists and is actually a student
+        val student = userRepository.findById(studentId).orElseThrow {
+            throw IllegalArgumentException("学生不存在")
+        }
+        if (student.role != "student") {
+            throw IllegalArgumentException("只能添加学生角色到课程")
+        }
+
+        // Check course is active
+        if (course.status != 1) {
+            throw IllegalArgumentException("该课程当前不可选课")
+        }
+
+        // Check if already enrolled
+        if (courseSelectionRepository.existsByStudentIdAndCourseId(studentId, courseId)) {
+            throw IllegalArgumentException("该学生已选此课程")
+        }
+
+        val enrollment = CourseSelection(
+            studentId = studentId,
+            courseId = courseId
+        )
+        val savedEnrollment = courseSelectionRepository.save(enrollment)
+
+        return EnrollmentResponse(
+            id = savedEnrollment.id ?: 0L,
+            studentId = studentId,
+            studentName = student.realName ?: student.username,
+            courseId = courseId,
+            courseName = course.courseName,
+            enrollmentTime = savedEnrollment.selectionTime
+        )
+    }
+
+    override fun removeStudentFromCourse(
+        courseId: Long,
+        studentId: Long,
+        operatorId: Long,
+        operatorRole: String
+    ) {
+        // Check course exists
+        val course = courseRepository.findById(courseId).orElseThrow {
+            throw IllegalArgumentException("课程不存在")
+        }
+
+        // Check permission:
+        // - admin can remove anyone
+        // - teacher can remove from their own course
+        // - student can drop their own course
+        val hasPermission = when (operatorRole) {
+            "admin" -> true
+            "teacher" -> course.teacherId == operatorId
+            "student" -> operatorId == studentId
+            else -> false
+        }
+        if (!hasPermission) {
+            throw IllegalArgumentException("您没有权限移除此学生")
+        }
+
+        // Find enrollment
+        val enrollment = courseSelectionRepository.findByStudentIdAndCourseId(studentId, courseId)
+            ?: throw IllegalArgumentException("该学生未选此课程")
+
+        courseSelectionRepository.delete(enrollment)
+    }
+
     private fun toCourseResponse(course: Course, teacherName: String, enrollmentCount: Long): CourseResponse {
         return CourseResponse(
             id = course.id ?: 0L,

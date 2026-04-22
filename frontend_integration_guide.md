@@ -78,12 +78,12 @@
 - `GET /api/exams`: 获取考试列表
 - `GET /api/exams/{id}`: 获取考试详情（含监考配置）
 - `POST /api/exams`: 创建考试（教师/管理员）
-- `POST /api/exams/{id}/publish`: 发布考试
-- `GET /api/exams/my`: 获取我的考试列表
+- `PATCH /api/exams/{id}?status=1`: 发布考试
+- `POST /api/exams/{id}/submissions`: 开始考试
 
 #### 题目相关
 - `POST /api/questions`: 创建题目
-- `POST /api/questions/import`: 批量导入题目
+- `POST /api/question-import-export/import`: 批量导入题目
 
 #### 答题相关
 - `POST /api/submissions`: 提交试卷

@@ -237,4 +237,102 @@ class CourseController(
         val enrollments = courseService.getMyEnrollments(user.safeId)
         return Result.success(enrollments)
     }
+
+    @PostMapping("/{id}/students/{studentId}")
+    @Operation(
+        summary = "添加学生到课程",
+        description = "管理员或授课教师将指定学生添加到课程",
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
+    fun addStudentToCourse(
+        @Parameter(description = "课程ID") @PathVariable id: Long,
+        @Parameter(description = "学生ID") @PathVariable studentId: Long
+    ): Result<EnrollmentResponse> {
+        val authentication = SecurityContextHolder.getContext().authentication
+            ?: return Result.error("未登录", 401)
+
+        val username = authentication.name
+        val user = userRepository.findByUsername(username)
+            ?: return Result.error("用户不存在", 404)
+
+        if (user.role != "teacher" && user.role != "admin") {
+            return Result.error("只有教师和管理员可以添加学生", 403)
+        }
+
+        return try {
+            val enrollment = courseService.addStudentToCourse(id, studentId, user.safeId, user.role)
+            Result.success(enrollment, "学生添加成功")
+        } catch (e: IllegalArgumentException) {
+            Result.error(e.message ?: "添加失败", 400)
+        }
+    }
+
+    @PostMapping("/{id}/students")
+    @Operation(
+        summary = "批量添加学生到课程",
+        description = "管理员或授课教师批量添加多个学生到课程",
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
+    fun batchAddStudentsToCourse(
+        @Parameter(description = "课程ID") @PathVariable id: Long,
+        @RequestBody studentIds: List<Long>
+    ): Result<List<EnrollmentResponse>> {
+        val authentication = SecurityContextHolder.getContext().authentication
+            ?: return Result.error("未登录", 401)
+
+        val username = authentication.name
+        val user = userRepository.findByUsername(username)
+            ?: return Result.error("用户不存在", 404)
+
+        if (user.role != "teacher" && user.role != "admin") {
+            return Result.error("只有教师和管理员可以添加学生", 403)
+        }
+
+        if (studentIds.isEmpty()) {
+            return Result.error("学生ID列表不能为空", 400)
+        }
+
+        val results = mutableListOf<EnrollmentResponse>()
+        val errors = mutableListOf<String>()
+
+        for (studentId in studentIds.distinct()) {
+            try {
+                val enrollment = courseService.addStudentToCourse(id, studentId, user.safeId, user.role)
+                results.add(enrollment)
+            } catch (e: IllegalArgumentException) {
+                errors.add("学生ID $studentId: ${e.message}")
+            }
+        }
+
+        return if (results.isNotEmpty()) {
+            Result.success(results, "成功添加 ${results.size} 名学生${if (errors.isNotEmpty()) "，${errors.size} 名失败" else ""}")
+        } else {
+            Result.error("全部添加失败: ${errors.joinToString("; ")}", 400)
+        }
+    }
+
+    @DeleteMapping("/{id}/students/{studentId}")
+    @Operation(
+        summary = "从课程移除学生",
+        description = "管理员、授课教师移除学生，或学生自己退课",
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
+    fun removeStudentFromCourse(
+        @Parameter(description = "课程ID") @PathVariable id: Long,
+        @Parameter(description = "学生ID") @PathVariable studentId: Long
+    ): Result<String> {
+        val authentication = SecurityContextHolder.getContext().authentication
+            ?: return Result.error("未登录", 401)
+
+        val username = authentication.name
+        val user = userRepository.findByUsername(username)
+            ?: return Result.error("用户不存在", 404)
+
+        return try {
+            courseService.removeStudentFromCourse(id, studentId, user.safeId, user.role)
+            Result.success("移除成功")
+        } catch (e: IllegalArgumentException) {
+            Result.error(e.message ?: "移除失败", 400)
+        }
+    }
 }

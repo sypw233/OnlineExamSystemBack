@@ -19,4 +19,8 @@ interface CourseService {
     fun enrollStudent(courseId: Long, studentId: Long): EnrollmentResponse
     fun getEnrolledStudents(courseId: Long, teacherId: Long, userRole: String): List<EnrollmentResponse>
     fun getMyEnrollments(studentId: Long): List<EnrollmentResponse>
+
+    // Admin/Teacher manage students
+    fun addStudentToCourse(courseId: Long, studentId: Long, operatorId: Long, operatorRole: String): EnrollmentResponse
+    fun removeStudentFromCourse(courseId: Long, studentId: Long, operatorId: Long, operatorRole: String)
 }
