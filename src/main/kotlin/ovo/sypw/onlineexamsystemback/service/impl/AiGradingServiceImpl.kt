@@ -240,7 +240,7 @@ class AiGradingServiceImpl(
         }
 
         // 3. Get exam questions and filter subjective ones
-        val examQuestions = examQuestionRepository.findByExamIdOrderBySequence(exam.examId)
+        val examQuestions = examQuestionRepository.findByExamIdOrderBySequence(exam.id!!)
         val questionIds = examQuestions.map { it.questionId }
         val questions = questionRepository.findAllById(questionIds).associateBy { it.id }
 
@@ -343,20 +343,22 @@ class AiGradingServiceImpl(
             existingScores[result.questionId.toString()] = result.suggestedScore
         }
 
+        val aiDetailsList: List<Map<String, Any>> = gradingResults.map { result ->
+            mapOf<String, Any>(
+                "questionId" to result.questionId,
+                "suggestedScore" to result.suggestedScore,
+                "explanation" to result.explanation,
+                "strengths" to result.strengths,
+                "improvements" to result.improvements
+            )
+        }
+
         val newDetail = mutableMapOf<String, Any>(
             "questionScores" to existingScores,
             "aiGraded" to true,
             "aiGradedAt" to LocalDateTime.now().toString(),
             "aiSubjectiveSuggestedScore" to totalSubjectiveSuggestedScore,
-            "aiDetails" to gradingResults.map {
-                mapOf(
-                    "questionId" to it.questionId,
-                    "suggestedScore" to it.suggestedScore,
-                    "explanation" to it.explanation,
-                    "strengths" to it.strengths,
-                    "improvements" to it.improvements
-                )
-            }
+            "aiDetails" to aiDetailsList
         )
 
         if (objectiveScore != null) {

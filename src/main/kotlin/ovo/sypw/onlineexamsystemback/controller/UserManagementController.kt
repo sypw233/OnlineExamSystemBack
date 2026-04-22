@@ -11,6 +11,7 @@ import ovo.sypw.onlineexamsystemback.dto.request.UserCreateRequest
 import ovo.sypw.onlineexamsystemback.dto.request.UserUpdateRequest
 import ovo.sypw.onlineexamsystemback.dto.response.UserResponse
 import ovo.sypw.onlineexamsystemback.entity.User
+import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.security.CurrentUser
 import ovo.sypw.onlineexamsystemback.service.UserManagementService
