@@ -12,6 +12,7 @@ import ovo.sypw.onlineexamsystemback.dto.request.SubmissionRequest
 import ovo.sypw.onlineexamsystemback.dto.response.SubmissionResponse
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.service.SubmissionService
+import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
@@ -79,7 +80,7 @@ class SubmissionController(
             ?: return Result.error("用户不存在", 404)
 
         return try {
-            val submission = submissionService.submitExam(request, user.id ?: 0L)
+            val submission = submissionService.submitExam(request, user.safeId)
             Result.success(submission, "提交成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "提交失败", 400)
@@ -103,7 +104,7 @@ class SubmissionController(
             ?: return Result.error("用户不存在", 404)
 
         return try {
-            val submission = submissionService.getSubmissionById(id, user.id ?: 0L, user.role)
+            val submission = submissionService.getSubmissionById(id, user.safeId, user.role)
             Result.success(submission)
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "查询失败", 400)
@@ -136,7 +137,7 @@ class SubmissionController(
             if (examId != null) {
                 // Check if student has a submission for this exam
                 return try {
-                    val submission = submissionService.getUserSubmissions(user.id ?: 0L, pageable)
+                    val submission = submissionService.getUserSubmissions(user.safeId, pageable)
                         .content.firstOrNull { it.examId == examId }
                         ?.let { org.springframework.data.domain.PageImpl(listOf(it), pageable, 1) }
                         ?: org.springframework.data.domain.PageImpl(emptyList<SubmissionResponse>(), pageable, 0)
@@ -146,7 +147,7 @@ class SubmissionController(
                 }
             }
             return try {
-                val submissions = submissionService.getUserSubmissions(user.id ?: 0L, pageable)
+                val submissions = submissionService.getUserSubmissions(user.safeId, pageable)
                 Result.success(submissions)
             } catch (e: IllegalArgumentException) {
                 Result.error(e.message ?: "查询失败", 400)
@@ -156,7 +157,7 @@ class SubmissionController(
         // Teacher / Admin
         if (examId != null) {
             return try {
-                val submissions = submissionService.getExamSubmissions(examId, user.id ?: 0L, user.role, pageable)
+                val submissions = submissionService.getExamSubmissions(examId, user.safeId, user.role, pageable)
                 Result.success(submissions)
             } catch (e: IllegalArgumentException) {
                 Result.error(e.message ?: "查询失败", 400)
@@ -201,7 +202,7 @@ class SubmissionController(
         }
 
         return try {
-            val submission = submissionService.gradeSubmission(id, request, user.id ?: 0L, user.role)
+            val submission = submissionService.gradeSubmission(id, request, user.safeId, user.role)
             Result.success(submission, "评分成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "评分失败", 400)
@@ -254,7 +255,7 @@ class SubmissionController(
             ?: return Result.error("用户不存在", 404)
 
         return try {
-            val autoSubmitted = submissionService.recordProctoringEvent(request, user.id ?: 0L)
+            val autoSubmitted = submissionService.recordProctoringEvent(request, user.safeId)
             Result.success(
                 mapOf(
                     "recorded" to true,

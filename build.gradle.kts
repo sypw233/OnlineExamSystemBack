@@ -4,6 +4,7 @@ plugins {
     id("org.springframework.boot") version "4.0.0"
     id("io.spring.dependency-management") version "1.1.7"
     kotlin("plugin.jpa") version "2.2.21"
+    jacoco
 }
 
 group = "ovo.sypw"
@@ -49,9 +50,17 @@ dependencies{
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     runtimeOnly("org.postgresql:postgresql")
-    testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
+    testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+    }
 }
 
 kotlin {

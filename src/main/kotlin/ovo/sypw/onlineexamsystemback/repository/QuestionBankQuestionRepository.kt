@@ -2,6 +2,7 @@ package ovo.sypw.onlineexamsystemback.repository
 
 import ovo.sypw.onlineexamsystemback.entity.QuestionBankQuestion
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Query
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
 
@@ -22,7 +23,15 @@ interface QuestionBankQuestionRepository : JpaRepository<QuestionBankQuestion, L
     
     // Count questions in a bank
     fun countByBankId(bankId: Long): Long
-    
+
+    // Batch count questions in multiple banks
+    @Query("SELECT qbq.bankId, COUNT(qbq) FROM QuestionBankQuestion qbq WHERE qbq.bankId IN :bankIds GROUP BY qbq.bankId")
+    fun countByBankIdIn(@org.springframework.data.repository.query.Param("bankIds") bankIds: List<Long>): List<Array<Any>>
+
     // Count banks containing a question
     fun countByQuestionId(questionId: Long): Long
+
+    // Batch count banks containing multiple questions
+    @Query("SELECT qbq.questionId, COUNT(qbq) FROM QuestionBankQuestion qbq WHERE qbq.questionId IN :questionIds GROUP BY qbq.questionId")
+    fun countByQuestionIdIn(@org.springframework.data.repository.query.Param("questionIds") questionIds: List<Long>): List<Array<Any>>
 }

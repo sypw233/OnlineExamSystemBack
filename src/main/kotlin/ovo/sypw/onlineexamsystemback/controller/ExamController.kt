@@ -15,6 +15,7 @@ import ovo.sypw.onlineexamsystemback.repository.CourseRepository
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.service.ExamService
 import ovo.sypw.onlineexamsystemback.service.SubmissionService
+import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
@@ -64,7 +65,7 @@ class ExamController(
         }
 
         return try {
-            val exam = examService.createExam(request, user.id ?: 0L)
+            val exam = examService.createExam(request, user.safeId)
             Result.success(exam, "考试创建成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "创建失败", 400)
@@ -98,7 +99,7 @@ class ExamController(
 
         // If teacher, limit by their teaching courses
         if (user.role == "teacher") {
-            val courseIds = courseRepository.findByTeacherId(user.id ?: 0L).map { it.id ?: 0L }
+            val courseIds = courseRepository.findByTeacherId(user.safeId).map { it.id ?: 0L }
             if (courseIds.isEmpty()) {
                 return Result.success(Page.empty(pageable))
             }
@@ -108,7 +109,7 @@ class ExamController(
             val exams = if (courseId != null) {
                 examService.getExamsByCourse(courseId, pageable)
             } else {
-                examService.getMyTeachingExams(user.id ?: 0L, pageable)
+                examService.getMyTeachingExams(user.safeId, pageable)
             }
             // In-memory status filter for teachers (page metadata may be slightly off, acceptable for small datasets)
             val filtered = if (status != null) {
@@ -170,7 +171,7 @@ class ExamController(
             ?: return Result.error("用户不存在", 404)
 
         return try {
-            val exam = examService.updateExam(id, request, user.id ?: 0L, user.role)
+            val exam = examService.updateExam(id, request, user.safeId, user.role)
             Result.success(exam, "考试更新成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "更新失败", 400)
@@ -194,7 +195,7 @@ class ExamController(
             ?: return Result.error("用户不存在", 404)
 
         return try {
-            examService.deleteExam(id, user.id ?: 0L, user.role)
+            examService.deleteExam(id, user.safeId, user.role)
             Result.success("考试删除成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "删除失败", 400)
@@ -220,7 +221,7 @@ class ExamController(
             ?: return Result.error("用户不存在", 404)
 
         return try {
-            val exam = examService.patchExam(id, status, user.id ?: 0L, user.role)
+            val exam = examService.patchExam(id, status, user.safeId, user.role)
             Result.success(exam, "考试更新成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "更新失败", 400)
@@ -248,7 +249,7 @@ class ExamController(
         }
 
         return try {
-            val submission = submissionService.startExam(id, user.id ?: 0L)
+            val submission = submissionService.startExam(id, user.safeId)
             Result.success(submission, "考试已开始")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "开始失败", 400)
@@ -279,7 +280,7 @@ class ExamController(
             ?: return Result.error("用户不存在", 404)
 
         return try {
-            examService.addQuestionToExam(id, request, user.id ?: 0L, user.role)
+            examService.addQuestionToExam(id, request, user.safeId, user.role)
             Result.success("题目添加成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "添加失败", 400)
@@ -304,7 +305,7 @@ class ExamController(
             ?: return Result.error("用户不存在", 404)
 
         return try {
-            examService.removeQuestionFromExam(id, questionId, user.id ?: 0L, user.role)
+            examService.removeQuestionFromExam(id, questionId, user.safeId, user.role)
             Result.success("题目移除成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "移除失败", 400)

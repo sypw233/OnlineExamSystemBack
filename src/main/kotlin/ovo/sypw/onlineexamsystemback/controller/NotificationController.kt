@@ -8,6 +8,7 @@ import ovo.sypw.onlineexamsystemback.dto.response.NotificationResponse
 import ovo.sypw.onlineexamsystemback.dto.response.UnreadCountResponse
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.service.NotificationService
+import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
@@ -59,7 +60,7 @@ class NotificationController(
             ?: return Result.error("用户不存在", 404)
 
         val pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createTime"))
-        val notifications = notificationService.getUserNotifications(user.id ?: 0L, pageable)
+        val notifications = notificationService.getUserNotifications(user.safeId, pageable)
         
         return Result.success(notifications)
     }
@@ -87,7 +88,7 @@ class NotificationController(
         val user = userRepository.findByUsername(username)
             ?: return Result.error("用户不存在", 404)
 
-        val count = notificationService.getUnreadCount(user.id ?: 0L)
+        val count = notificationService.getUnreadCount(user.safeId)
         return Result.success(count)
     }
 
@@ -117,7 +118,7 @@ class NotificationController(
             ?: return Result.error("用户不存在", 404)
 
         return try {
-            val notification = notificationService.markAsRead(id, user.id ?: 0L)
+            val notification = notificationService.markAsRead(id, user.safeId)
             Result.success(notification, "标记成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "操作失败", 400)
@@ -143,7 +144,7 @@ class NotificationController(
         val user = userRepository.findByUsername(username)
             ?: return Result.error("用户不存在", 404)
 
-        val count = notificationService.markAllAsRead(user.id ?: 0L)
+        val count = notificationService.markAllAsRead(user.safeId)
         return Result.success(mapOf("count" to count), "已全部标记为已读")
     }
 
@@ -173,7 +174,7 @@ class NotificationController(
             ?: return Result.error("用户不存在", 404)
 
         return try {
-            notificationService.deleteNotification(id, user.id ?: 0L)
+            notificationService.deleteNotification(id, user.safeId)
             Result.success("删除成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "删除失败", 400)

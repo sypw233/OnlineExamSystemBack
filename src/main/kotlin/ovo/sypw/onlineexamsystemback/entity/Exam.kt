@@ -5,7 +5,7 @@ import java.time.LocalDateTime
 
 @Entity
 @Table(name = "exams")
-data class Exam(
+class Exam(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null,
@@ -55,4 +55,14 @@ data class Exam(
 
     @Column(name = "create_time", nullable = false, updatable = false)
     val createTime: LocalDateTime = LocalDateTime.now()
-)
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is Exam) return false
+        return id != null && id == other.id
+    }
+
+    override fun hashCode(): Int {
+        return id?.hashCode() ?: 0
+    }
+}

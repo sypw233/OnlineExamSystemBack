@@ -96,13 +96,11 @@ class UserManagementServiceImpl(
             }
         }
 
-        val updatedUser = user.copy(
-            realName = request.realName ?: user.realName,
-            email = request.email ?: user.email,
-            role = request.role ?: user.role,
-            status = request.status ?: user.status
-        )
-        return userRepository.save(updatedUser).toResponse()
+        request.realName?.let { user.realName = it }
+        request.email?.let { user.email = it }
+        request.role?.let { user.role = it }
+        request.status?.let { user.status = it }
+        return userRepository.save(user).toResponse()
     }
 
     @Transactional
@@ -145,8 +143,8 @@ class UserManagementServiceImpl(
         val user = userRepository.findById(id).orElseThrow {
             IllegalArgumentException("用户不存在, id=$id")
         }
-        val updatedUser = user.copy(password = passwordEncoder.encode(request.newPassword) ?: "")
-        userRepository.save(updatedUser)
+        user.password = passwordEncoder.encode(request.newPassword) ?: ""
+        userRepository.save(user)
     }
 
     @Transactional
@@ -155,8 +153,8 @@ class UserManagementServiceImpl(
             IllegalArgumentException("用户不存在, id=$id")
         }
         val newStatus = if (enable) 1 else 0
-        val updatedUser = user.copy(status = newStatus)
-        return userRepository.save(updatedUser).toResponse()
+        user.status = newStatus
+        return userRepository.save(user).toResponse()
     }
 
     override fun getUsersByRole(role: String): List<UserResponse> {

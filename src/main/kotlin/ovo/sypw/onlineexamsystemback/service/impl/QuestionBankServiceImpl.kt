@@ -40,7 +40,7 @@ class QuestionBankServiceImpl(
         )
 
         val savedBank = questionBankRepository.save(questionBank)
-        return toQuestionBankResponse(savedBank, creator.realName ?: creator.username)
+        return toQuestionBankResponse(savedBank, creator.realName ?: creator.username, 0)
     }
 
     override fun updateQuestionBank(
@@ -65,8 +65,8 @@ class QuestionBankServiceImpl(
         val creator = userRepository.findById(questionBank.creatorId).orElseThrow {
             throw IllegalArgumentException("创建者不存在")
         }
-
-        return toQuestionBankResponse(updatedBank, creator.realName ?: creator.username)
+        val questionCount = questionBankQuestionRepository.countByBankId(id)
+        return toQuestionBankResponse(updatedBank, creator.realName ?: creator.username, questionCount)
     }
 
     override fun deleteQuestionBank(id: Long, userId: Long, userRole: String) {
@@ -96,16 +96,20 @@ class QuestionBankServiceImpl(
         val creator = userRepository.findById(questionBank.creatorId).orElseThrow {
             throw IllegalArgumentException("创建者不存在")
         }
-
-        return toQuestionBankResponse(questionBank, creator.realName ?: creator.username)
+        val questionCount = questionBankQuestionRepository.countByBankId(id)
+        return toQuestionBankResponse(questionBank, creator.realName ?: creator.username, questionCount)
     }
 
     override fun getAllQuestionBanks(pageable: Pageable): Page<QuestionBankResponse> {
-        return questionBankRepository.findAll(pageable).map { bank ->
-            val creator = userRepository.findById(bank.creatorId).orElseThrow {
-                throw IllegalArgumentException("创建者不存在")
-            }
-            toQuestionBankResponse(bank, creator.realName ?: creator.username)
+        val bankPage = questionBankRepository.findAll(pageable)
+        val creatorIds = bankPage.content.map { it.creatorId }.toSet()
+        val creators = userRepository.findAllById(creatorIds).associateBy { it.id }
+        val bankIds = bankPage.content.mapNotNull { it.id }
+        val questionCounts = batchFetchQuestionCounts(bankIds)
+
+        return bankPage.map { bank ->
+            val creator = creators[bank.creatorId] ?: throw IllegalArgumentException("创建者不存在")
+            toQuestionBankResponse(bank, creator.realName ?: creator.username, questionCounts[bank.id] ?: 0)
         }
     }
 
@@ -113,9 +117,12 @@ class QuestionBankServiceImpl(
         val creator = userRepository.findById(userId).orElseThrow {
             throw IllegalArgumentException("用户不存在")
         }
+        val bankPage = questionBankRepository.findByCreatorId(userId, pageable)
+        val bankIds = bankPage.content.mapNotNull { it.id }
+        val questionCounts = batchFetchQuestionCounts(bankIds)
 
-        return questionBankRepository.findByCreatorId(userId, pageable).map { bank ->
-            toQuestionBankResponse(bank, creator.realName ?: creator.username)
+        return bankPage.map { bank ->
+            toQuestionBankResponse(bank, creator.realName ?: creator.username, questionCounts[bank.id] ?: 0)
         }
     }
 
@@ -174,33 +181,35 @@ class QuestionBankServiceImpl(
         }
 
         val associations = questionBankQuestionRepository.findByBankId(bankId)
+        val questionIds = associations.map { it.questionId }
+        val questions = questionRepository.findAllById(questionIds).associateBy { it.id }
+        val creatorIds = questions.values.map { it.creatorId }.toSet()
+        val creators = userRepository.findAllById(creatorIds).associateBy { it.id }
+        val bankCounts = questionBankQuestionRepository.countByQuestionIdIn(questionIds)
+            .associate { (it[0] as Number).toLong() to (it[1] as Number).toLong() }
+
         return associations.mapNotNull { association ->
-            val question = questionRepository.findById(association.questionId).orElse(null)
-            question?.let {
-                val creator = userRepository.findById(it.creatorId).orElseThrow {
-                    throw IllegalArgumentException("创建者不存在")
-                }
-                val bankCount = questionBankQuestionRepository.countByQuestionId(it.id ?: 0L)
+            questions[association.questionId]?.let { q ->
+                val creator = creators[q.creatorId] ?: throw IllegalArgumentException("创建者不存在")
                 QuestionResponse(
-                    id = it.id ?: 0L,
-                    content = it.content,
-                    type = it.type,
-                    options = it.options,
-                    answer = it.answer,
-                    analysis = it.analysis,
-                    difficulty = it.difficulty,
-                    category = it.category,
-                    creatorId = it.creatorId,
+                    id = q.id ?: 0L,
+                    content = q.content,
+                    type = q.type,
+                    options = q.options,
+                    answer = q.answer,
+                    analysis = q.analysis,
+                    difficulty = q.difficulty,
+                    category = q.category,
+                    creatorId = q.creatorId,
                     creatorName = creator.realName ?: creator.username,
-                    bankCount = bankCount,
-                    createTime = it.createTime
+                    bankCount = bankCounts[q.id] ?: 0,
+                    createTime = q.createTime
                 )
             }
         }
     }
 
-    private fun toQuestionBankResponse(questionBank: QuestionBank, creatorName: String): QuestionBankResponse {
-        val questionCount = questionBankQuestionRepository.countByBankId(questionBank.id ?: 0L)
+    private fun toQuestionBankResponse(questionBank: QuestionBank, creatorName: String, questionCount: Long): QuestionBankResponse {
         return QuestionBankResponse(
             id = questionBank.id ?: 0L,
             name = questionBank.name,
@@ -210,5 +219,10 @@ class QuestionBankServiceImpl(
             questionCount = questionCount,
             createTime = questionBank.createTime
         )
+    }
+
+    private fun batchFetchQuestionCounts(bankIds: List<Long>): Map<Long, Long> {
+        return questionBankQuestionRepository.countByBankIdIn(bankIds)
+            .associate { (it[0] as Number).toLong() to (it[1] as Number).toLong() }
     }
 }

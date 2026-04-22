@@ -10,6 +10,7 @@ import ovo.sypw.onlineexamsystemback.dto.response.QuestionBankResponse
 import ovo.sypw.onlineexamsystemback.dto.response.QuestionResponse
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.service.QuestionBankService
+import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
@@ -43,7 +44,7 @@ class QuestionBankController(
         }
 
         return try {
-            val questionBank = questionBankService.createQuestionBank(request, user.id ?: 0L)
+            val questionBank = questionBankService.createQuestionBank(request, user.safeId)
             Result.success(questionBank, "题库创建成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "创建失败", 400)
@@ -71,12 +72,38 @@ class QuestionBankController(
         val questionBanks = if (user.role == "admin") {
             questionBankService.getAllQuestionBanks(pageable)
         } else {
-            questionBankService.getMyQuestionBanks(user.id ?: 0L, pageable)
+            questionBankService.getMyQuestionBanks(user.safeId, pageable)
         }
         return Result.success(questionBanks)
     }
 
-    @GetMapping("/{id}")
+    @GetMapping("/my")
+    @Operation(
+        summary = "获取我的题库(兼容)",
+        description = "管理员获取全部题库，教师获取自己创建的题库，支持分页",
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
+    fun getMyQuestionBanks(
+        @Parameter(description = "页码", example = "0") @RequestParam(defaultValue = "0") page: Int,
+        @Parameter(description = "每页条数", example = "20") @RequestParam(defaultValue = "20") size: Int
+    ): Result<Page<QuestionBankResponse>> {
+        val authentication = SecurityContextHolder.getContext().authentication
+            ?: return Result.error("未登录", 401)
+
+        val username = authentication.name
+        val user = userRepository.findByUsername(username)
+            ?: return Result.error("用户不存在", 404)
+
+        val pageable = PageRequest.of(page, size.coerceAtMost(100))
+        val questionBanks = if (user.role == "admin") {
+            questionBankService.getAllQuestionBanks(pageable)
+        } else {
+            questionBankService.getMyQuestionBanks(user.safeId, pageable)
+        }
+        return Result.success(questionBanks)
+    }
+
+    @GetMapping("/{id:\\d+}")
     @Operation(
         summary = "获取题库详情",
         description = "根据ID获取题库详细信息",
@@ -118,7 +145,7 @@ class QuestionBankController(
             ?: return Result.error("用户不存在", 404)
 
         return try {
-            val questionBank = questionBankService.updateQuestionBank(id, request, user.id ?: 0L, user.role)
+            val questionBank = questionBankService.updateQuestionBank(id, request, user.safeId, user.role)
             Result.success(questionBank, "题库更新成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "更新失败", 400)
@@ -142,7 +169,7 @@ class QuestionBankController(
             ?: return Result.error("用户不存在", 404)
 
         return try {
-            questionBankService.deleteQuestionBank(id, user.id ?: 0L, user.role)
+            questionBankService.deleteQuestionBank(id, user.safeId, user.role)
             Result.success("题库删除成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "删除失败", 400)
@@ -176,7 +203,7 @@ class QuestionBankController(
             ?: return Result.error("用户不存在", 404)
 
         return try {
-            questionBankService.addQuestionToBank(id, questionId, user.id ?: 0L, user.role)
+            questionBankService.addQuestionToBank(id, questionId, user.safeId, user.role)
             Result.success("题目添加成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "添加失败", 400)
@@ -201,7 +228,7 @@ class QuestionBankController(
             ?: return Result.error("用户不存在", 404)
 
         return try {
-            questionBankService.removeQuestionFromBank(id, questionId, user.id ?: 0L, user.role)
+            questionBankService.removeQuestionFromBank(id, questionId, user.safeId, user.role)
             Result.success("题目移除成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "移除失败", 400)
@@ -231,6 +258,10 @@ class QuestionBankController(
         val username = authentication.name
         val user = userRepository.findByUsername(username)
             ?: return Result.error("用户不存在", 404)
+
+        if (user.role == "student") {
+            return Result.error("学生无权查看题库题目", 403)
+        }
 
         return try {
             val questions = questionBankService.getQuestionsInBank(id)

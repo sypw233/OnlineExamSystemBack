@@ -7,7 +7,7 @@ import java.time.LocalDateTime
 
 @Entity
 @Table(name = "exam_submissions")
-data class ExamSubmission(
+class ExamSubmission(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null,
@@ -45,4 +45,14 @@ data class ExamSubmission(
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "proctoring_data", columnDefinition = "jsonb")
     var proctoringData: String? = null // 监考详细数据（JSON）
-)
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is ExamSubmission) return false
+        return id != null && id == other.id
+    }
+
+    override fun hashCode(): Int {
+        return id?.hashCode() ?: 0
+    }
+}

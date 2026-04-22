@@ -4,6 +4,7 @@ import ovo.sypw.onlineexamsystemback.repository.CourseSelectionRepository
 import ovo.sypw.onlineexamsystemback.repository.ExamRepository
 import ovo.sypw.onlineexamsystemback.repository.NotificationRepository
 import ovo.sypw.onlineexamsystemback.service.NotificationService
+import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
@@ -15,6 +16,8 @@ class NotificationScheduledService(
     private val notificationService: NotificationService,
     private val notificationRepository: NotificationRepository
 ) {
+
+    private val logger = LoggerFactory.getLogger(NotificationScheduledService::class.java)
 
     /**
      * Send exam reminders 24 hours before exam
@@ -70,6 +73,6 @@ class NotificationScheduledService(
     fun cleanupOldNotifications() {
         val beforeDate = LocalDateTime.now().minusDays(30)
         val deletedCount = notificationRepository.deleteOldReadNotifications(beforeDate)
-        println("[Scheduled] Cleaned up $deletedCount old read notifications")
+        logger.info("[Scheduled] Cleaned up {} old read notifications", deletedCount)
     }
 }

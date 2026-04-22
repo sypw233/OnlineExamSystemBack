@@ -40,7 +40,7 @@ class CourseServiceImpl(
         )
 
         val savedCourse = courseRepository.save(course)
-        return toCourseResponse(savedCourse, teacher.realName ?: teacher.username)
+        return toCourseResponse(savedCourse, teacher.realName ?: teacher.username, 0)
     }
 
     override fun updateCourse(id: Long, courseRequest: CourseRequest, userId: Long, userRole: String): CourseResponse {
@@ -61,8 +61,8 @@ class CourseServiceImpl(
         val teacher = userRepository.findById(course.teacherId).orElseThrow {
             throw IllegalArgumentException("教师不存在")
         }
-        
-        return toCourseResponse(updatedCourse, teacher.realName ?: teacher.username)
+        val enrollmentCount = courseSelectionRepository.countByCourseId(id)
+        return toCourseResponse(updatedCourse, teacher.realName ?: teacher.username, enrollmentCount)
     }
 
     override fun deleteCourse(id: Long, userId: Long, userRole: String) {
@@ -92,16 +92,20 @@ class CourseServiceImpl(
         val teacher = userRepository.findById(course.teacherId).orElseThrow {
             throw IllegalArgumentException("教师不存在")
         }
-
-        return toCourseResponse(course, teacher.realName ?: teacher.username)
+        val enrollmentCount = courseSelectionRepository.countByCourseId(id)
+        return toCourseResponse(course, teacher.realName ?: teacher.username, enrollmentCount)
     }
 
     override fun getAllActiveCourses(pageable: Pageable): Page<CourseResponse> {
-        return courseRepository.findByStatusOrderByCreateTimeDesc(1, pageable).map { course ->
-            val teacher = userRepository.findById(course.teacherId).orElseThrow {
-                throw IllegalArgumentException("教师不存在")
-            }
-            toCourseResponse(course, teacher.realName ?: teacher.username)
+        val coursePage = courseRepository.findByStatusOrderByCreateTimeDesc(1, pageable)
+        val teacherIds = coursePage.content.map { it.teacherId }.toSet()
+        val teachers = userRepository.findAllById(teacherIds).associateBy { it.id }
+        val courseIds = coursePage.content.mapNotNull { it.id }
+        val enrollmentCounts = batchFetchEnrollmentCounts(courseIds)
+
+        return coursePage.map { course ->
+            val teacher = teachers[course.teacherId] ?: throw IllegalArgumentException("教师不存在")
+            toCourseResponse(course, teacher.realName ?: teacher.username, enrollmentCounts[course.id] ?: 0)
         }
     }
 
@@ -110,18 +114,19 @@ class CourseServiceImpl(
             "teacher" -> courseRepository.findByTeacherId(userId)
             "student" -> {
                 val enrollments = courseSelectionRepository.findByStudentId(userId)
-                enrollments.mapNotNull { enrollment ->
-                    courseRepository.findById(enrollment.courseId).orElse(null)
-                }
+                courseRepository.findAllById(enrollments.map { it.courseId })
             }
             else -> courseRepository.findAll()
         }
 
+        val teacherIds = courses.map { it.teacherId }.toSet()
+        val teachers = userRepository.findAllById(teacherIds).associateBy { it.id }
+        val courseIds = courses.mapNotNull { it.id }
+        val enrollmentCounts = batchFetchEnrollmentCounts(courseIds)
+
         return courses.map { course ->
-            val teacher = userRepository.findById(course.teacherId).orElseThrow {
-                throw IllegalArgumentException("教师不存在")
-            }
-            toCourseResponse(course, teacher.realName ?: teacher.username)
+            val teacher = teachers[course.teacherId] ?: throw IllegalArgumentException("教师不存在")
+            toCourseResponse(course, teacher.realName ?: teacher.username, enrollmentCounts[course.id] ?: 0)
         }
     }
 
@@ -178,10 +183,11 @@ class CourseServiceImpl(
         }
 
         val enrollments = courseSelectionRepository.findByCourseId(courseId)
+        val studentIds = enrollments.map { it.studentId }.toSet()
+        val students = userRepository.findAllById(studentIds).associateBy { it.id }
+
         return enrollments.map { enrollment ->
-            val student = userRepository.findById(enrollment.studentId).orElseThrow {
-                throw IllegalArgumentException("学生不存在")
-            }
+            val student = students[enrollment.studentId] ?: throw IllegalArgumentException("学生不存在")
             EnrollmentResponse(
                 id = enrollment.id ?: 0L,
                 studentId = enrollment.studentId,
@@ -195,13 +201,14 @@ class CourseServiceImpl(
 
     override fun getMyEnrollments(studentId: Long): List<EnrollmentResponse> {
         val enrollments = courseSelectionRepository.findByStudentId(studentId)
+        val courseIds = enrollments.map { it.courseId }
+        val courses = courseRepository.findAllById(courseIds).associateBy { it.id }
+        val student = userRepository.findById(studentId).orElseThrow {
+            throw IllegalArgumentException("学生不存在")
+        }
+
         return enrollments.map { enrollment ->
-            val course = courseRepository.findById(enrollment.courseId).orElseThrow {
-                throw IllegalArgumentException("课程不存在")
-            }
-            val student = userRepository.findById(studentId).orElseThrow {
-                throw IllegalArgumentException("学生不存在")
-            }
+            val course = courses[enrollment.courseId] ?: throw IllegalArgumentException("课程不存在")
             EnrollmentResponse(
                 id = enrollment.id ?: 0L,
                 studentId = studentId,
@@ -213,8 +220,7 @@ class CourseServiceImpl(
         }
     }
 
-    private fun toCourseResponse(course: Course, teacherName: String): CourseResponse {
-        val enrollmentCount = courseSelectionRepository.countByCourseId(course.id ?: 0L)
+    private fun toCourseResponse(course: Course, teacherName: String, enrollmentCount: Long): CourseResponse {
         return CourseResponse(
             id = course.id ?: 0L,
             courseName = course.courseName,
@@ -225,5 +231,10 @@ class CourseServiceImpl(
             enrollmentCount = enrollmentCount,
             createTime = course.createTime
         )
+    }
+
+    private fun batchFetchEnrollmentCounts(courseIds: List<Long>): Map<Long, Long> {
+        return courseSelectionRepository.countByCourseIdIn(courseIds)
+            .associate { (it[0] as Number).toLong() to (it[1] as Number).toLong() }
     }
 }

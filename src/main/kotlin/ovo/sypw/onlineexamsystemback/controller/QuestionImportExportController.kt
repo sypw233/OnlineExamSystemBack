@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.tags.Tag
 import ovo.sypw.onlineexamsystemback.dto.response.ImportResultResponse
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.service.QuestionImportExportService
+import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.*
@@ -79,7 +80,7 @@ class QuestionImportExportController(
             val result = questionImportExportService.importQuestionsFromExcel(
                 file = file,
                 bankId = bankId,
-                creatorId = user.id ?: 0L
+                creatorId = user.safeId
             )
             Result.success(result, "导入完成")
         } catch (e: IllegalArgumentException) {
@@ -121,7 +122,7 @@ class QuestionImportExportController(
         }
 
         return try {
-            val url = questionImportExportService.exportQuestionsToExcel(bankId, user.id ?: 0L)
+            val url = questionImportExportService.exportQuestionsToExcel(bankId, user.safeId)
             Result.success(url, "导出成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "导出失败", 400)
@@ -159,7 +160,7 @@ class QuestionImportExportController(
         }
 
         return try {
-            val url = questionImportExportService.downloadImportTemplate(user.id ?: 0L)
+            val url = questionImportExportService.downloadImportTemplate(user.safeId)
             Result.success(url, "模板生成成功")
         } catch (e: Exception) {
             Result.error("模板生成失败: ${e.message}", 500)

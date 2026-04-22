@@ -2,6 +2,8 @@ package ovo.sypw.onlineexamsystemback.repository
 
 import ovo.sypw.onlineexamsystemback.entity.ExamQuestion
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
 
@@ -19,10 +21,14 @@ interface ExamQuestionRepository : JpaRepository<ExamQuestion, Long> {
     
     // Count questions in exam
     fun countByExamId(examId: Long): Long
-    
+
+    // Batch count questions in multiple exams
+    @Query("SELECT eq.examId, COUNT(eq) FROM ExamQuestion eq WHERE eq.examId IN :examIds GROUP BY eq.examId")
+    fun countByExamIdIn(@Param("examIds") examIds: List<Long>): List<Array<Any>>
+
     // Find by exam and question
     fun findByExamIdAndQuestionId(examId: Long, questionId: Long): ExamQuestion?
-    
+
     // Find all exams using a question (for statistics)
     fun findByQuestionId(questionId: Long): List<ExamQuestion>
 }

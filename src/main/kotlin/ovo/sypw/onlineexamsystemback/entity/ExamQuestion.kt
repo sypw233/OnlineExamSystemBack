@@ -6,7 +6,7 @@ import java.io.Serializable
 @Entity
 @Table(name = "exam_questions")
 @IdClass(ExamQuestionId::class)
-data class ExamQuestion(
+class ExamQuestion(
     @Id
     @Column(name = "exam_id")
     val examId: Long,
@@ -20,9 +20,21 @@ data class ExamQuestion(
 
     @Column(nullable = false)
     var sequence: Int = 0 // Order of the question in the exam
-)
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is ExamQuestion) return false
+        return examId == other.examId && questionId == other.questionId
+    }
 
-data class ExamQuestionId(
+    override fun hashCode(): Int {
+        var result = examId.hashCode()
+        result = 31 * result + questionId.hashCode()
+        return result
+    }
+}
+
+class ExamQuestionId(
     val examId: Long = 0,
     val questionId: Long = 0
 ) : Serializable

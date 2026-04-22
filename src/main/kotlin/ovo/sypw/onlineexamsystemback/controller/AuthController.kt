@@ -14,6 +14,7 @@ import ovo.sypw.onlineexamsystemback.dto.response.UserProfileResponse
 import ovo.sypw.onlineexamsystemback.entity.User
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.security.JwtTokenProvider
+import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.security.authentication.AuthenticationManager
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
@@ -52,7 +53,7 @@ class AuthController(
         val authResponse = AuthResponse(
             accessToken = accessToken,
             refreshToken = refreshToken,
-            id = user.id ?: 0L,
+            id = user.safeId,
             username = user.username,
             nickname = user.nickname,
             realName = user.realName,
@@ -137,7 +138,7 @@ class AuthController(
         val authResponse = AuthResponse(
             accessToken = newAccessToken,
             refreshToken = newRefreshToken,
-            id = user.id ?: 0L,
+            id = user.safeId,
             username = user.username,
             nickname = user.nickname,
             realName = user.realName,
@@ -165,7 +166,7 @@ class AuthController(
 
         return Result.success(
             UserProfileResponse(
-                id = user.id ?: 0L,
+                id = user.safeId,
                 username = user.username,
                 nickname = user.nickname,
                 realName = user.realName,

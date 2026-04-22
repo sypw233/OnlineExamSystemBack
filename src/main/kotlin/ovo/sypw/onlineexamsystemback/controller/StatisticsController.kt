@@ -8,6 +8,7 @@ import ovo.sypw.onlineexamsystemback.dto.response.*
 import ovo.sypw.onlineexamsystemback.repository.ExamRepository
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.service.StatisticsService
+import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.*

@@ -9,6 +9,7 @@ import ovo.sypw.onlineexamsystemback.dto.response.SubmissionResponse
 import ovo.sypw.onlineexamsystemback.entity.ExamSubmission
 import ovo.sypw.onlineexamsystemback.repository.*
 import ovo.sypw.onlineexamsystemback.service.SubmissionService
+import org.slf4j.LoggerFactory
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
@@ -26,6 +27,8 @@ class SubmissionServiceImpl(
     private val objectMapper: ObjectMapper
 ) : SubmissionService {
 
+    private val logger = LoggerFactory.getLogger(SubmissionServiceImpl::class.java)
+
     override fun startExam(examId: Long, userId: Long): SubmissionResponse {
         // Check if already started or submitted
         val existingSubmission = submissionRepository.findByExamIdAndUserId(examId, userId)
@@ -34,7 +37,8 @@ class SubmissionServiceImpl(
             val exam = examRepository.findById(examId).orElseThrow {
                 throw IllegalArgumentException("考试不存在")
             }
-            return toSubmissionResponse(existingSubmission, exam.title)
+            val user = userRepository.findById(userId).orElseThrow { throw IllegalArgumentException("用户不存在") }
+            return toSubmissionResponse(existingSubmission, exam.title, user.realName ?: user.username)
         }
 
         // Validate exam exists and is published
@@ -63,7 +67,8 @@ class SubmissionServiceImpl(
         )
 
         val savedSubmission = submissionRepository.save(submission)
-        return toSubmissionResponse(savedSubmission, exam.title)
+        val user = userRepository.findById(userId).orElseThrow { throw IllegalArgumentException("用户不存在") }
+        return toSubmissionResponse(savedSubmission, exam.title, user.realName ?: user.username)
     }
 
     override fun submitExam(request: SubmissionRequest, userId: Long): SubmissionResponse {
@@ -112,7 +117,8 @@ class SubmissionServiceImpl(
 
 
         val savedSubmission = submissionRepository.save(submission)
-        return toSubmissionResponse(savedSubmission, exam.title)
+        val user = userRepository.findById(userId).orElseThrow { throw IllegalArgumentException("用户不存在") }
+        return toSubmissionResponse(savedSubmission, exam.title, user.realName ?: user.username)
     }
 
     override fun getSubmissionById(id: Long, userId: Long, userRole: String): SubmissionResponse {
@@ -128,8 +134,8 @@ class SubmissionServiceImpl(
         val exam = examRepository.findById(submission.examId).orElseThrow {
             throw IllegalArgumentException("考试不存在")
         }
-
-        return toSubmissionResponse(submission, exam.title)
+        val user = userRepository.findById(submission.userId).orElseThrow { throw IllegalArgumentException("用户不存在") }
+        return toSubmissionResponse(submission, exam.title, user.realName ?: user.username)
     }
 
     override fun getExamSubmissions(examId: Long, userId: Long, userRole: String, pageable: Pageable): Page<SubmissionResponse> {
@@ -145,15 +151,23 @@ class SubmissionServiceImpl(
             throw IllegalArgumentException("您没有权限查看此考试的提交记录")
         }
 
-        return submissionRepository.findByExamId(examId, pageable).map { toSubmissionResponse(it, exam.title) }
+        val submissionPage = submissionRepository.findByExamId(examId, pageable)
+        val userIds = submissionPage.content.map { it.userId }.toSet()
+        val users = userRepository.findAllById(userIds).associateBy { it.id }
+        return submissionPage.map { submission ->
+            val user = users[submission.userId] ?: throw IllegalArgumentException("用户不存在")
+            toSubmissionResponse(submission, exam.title, user.realName ?: user.username)
+        }
     }
 
     override fun getUserSubmissions(userId: Long, pageable: Pageable): Page<SubmissionResponse> {
-        return submissionRepository.findByUserId(userId, pageable).map { submission ->
-            val exam = examRepository.findById(submission.examId).orElseThrow {
-                throw IllegalArgumentException("考试不存在")
-            }
-            toSubmissionResponse(submission, exam.title)
+        val submissionPage = submissionRepository.findByUserId(userId, pageable)
+        val examIds = submissionPage.content.map { it.examId }.toSet()
+        val exams = examRepository.findAllById(examIds).associateBy { it.id }
+        val user = userRepository.findById(userId).orElseThrow { throw IllegalArgumentException("用户不存在") }
+        return submissionPage.map { submission ->
+            val exam = exams[submission.examId] ?: throw IllegalArgumentException("考试不存在")
+            toSubmissionResponse(submission, exam.title, user.realName ?: user.username)
         }
     }
 
@@ -189,24 +203,46 @@ class SubmissionServiceImpl(
             mutableMapOf<String, Int>() 
         } as MutableMap<String, Int>
         request.questionScores.forEach { (qid, score) ->
+            if (score < 0 || score > 1000) {
+                throw IllegalArgumentException("题目 $qid 的分数必须在 0 到 1000 之间")
+            }
             questionScores[qid.toString()] = score
         }
 
-        // Calculate total score
+        // Calculate objective and subjective scores based on question types
+        val examQuestions = examQuestionRepository.findByExamIdOrderBySequence(submission.examId)
+        val questionIds = examQuestions.map { it.questionId }
+        val questions = questionRepository.findAllById(questionIds).associateBy { it.id }
+
+        var objectiveScore = 0
+        var subjectiveScore = 0
+        examQuestions.forEach { eq ->
+            val score = questionScores[eq.questionId.toString()] ?: 0
+            val question = questions[eq.questionId]
+            when (question?.type) {
+                "single", "multiple", "true_false" -> objectiveScore += score
+                "fill_blank", "short_answer" -> subjectiveScore += score
+            }
+        }
+
+        // Calculate total score (retains existing behavior including any out-of-exam questionIds)
         val totalScore = questionScores.values.sum()
         submitDetail["totalScore"] = totalScore
         submitDetail["manuallyGraded"] = true
+        submitDetail["objectiveScore"] = objectiveScore
+        submitDetail["subjectiveScore"] = subjectiveScore
 
         submission.submitDetail = objectMapper.writeValueAsString(submitDetail)
         submission.submitScore = totalScore
         submission.status = 2 // Graded
 
         val gradedSubmission = submissionRepository.save(submission)
-        return toSubmissionResponse(gradedSubmission, exam.title)
+        val user = userRepository.findById(submission.userId).orElseThrow { throw IllegalArgumentException("用户不存在") }
+        return toSubmissionResponse(gradedSubmission, exam.title, user.realName ?: user.username)
     }
 
     override fun recordProctoringEvent(request: ProctoringEventRequest, userId: Long): Boolean {
-        val examId = request.examId!!
+        val examId = request.examId ?: throw IllegalArgumentException("考试ID不能为空")
         
         // Find or create submission for this user and exam
         var submission = submissionRepository.findByExamIdAndUserId(examId, userId)
@@ -296,11 +332,14 @@ class SubmissionServiceImpl(
      * Returns: Map with questionScores and totalScore
      */
     private fun autoGradeAnswers(answers: Map<Long, String>, examQuestions: List<ovo.sypw.onlineexamsystemback.entity.ExamQuestion>): MutableMap<String, Any> {
+        val questionIds = examQuestions.map { it.questionId }
+        val questions = questionRepository.findAllById(questionIds).associateBy { it.id }
+
         val questionScores = mutableMapOf<String, Int>()
         var totalScore = 0
 
         examQuestions.forEach { eq ->
-            val question = questionRepository.findById(eq.questionId).orElse(null) ?: return@forEach
+            val question = questions[eq.questionId] ?: return@forEach
             val userAnswer = answers[eq.questionId]?.trim() ?: ""
             val correctAnswer = question.answer?.trim() ?: ""
 
@@ -372,7 +411,7 @@ class SubmissionServiceImpl(
             data
         } catch (e: Exception) {
             // If invalid JSON, log warning and return null
-            println("Warning: Invalid proctoring data JSON, ignoring: ${e.message}")
+            logger.warn("Invalid proctoring data JSON, ignoring: ${e.message}")
             null
         }
     }
@@ -388,11 +427,7 @@ class SubmissionServiceImpl(
         return objectMapper.writeValueAsString(data)
     }
 
-    private fun toSubmissionResponse(submission: ExamSubmission, examTitle: String): SubmissionResponse {
-        val user = userRepository.findById(submission.userId).orElseThrow {
-            throw IllegalArgumentException("用户不存在")
-        }
-
+    private fun toSubmissionResponse(submission: ExamSubmission, examTitle: String, userName: String): SubmissionResponse {
         // Parse submit detail for scores
         var objectiveScore: Int? = null
         var subjectiveScore: Int? = null
@@ -402,7 +437,7 @@ class SubmissionServiceImpl(
             try {
                 val detail = objectMapper.readValue(submission.submitDetail!!, object : TypeReference<Map<String, Any>>() {})
                 totalScore = detail["totalScore"] as? Int ?: submission.submitScore
-                
+
                 // If manually graded, separate objective and subjective scores
                 if (detail["manuallyGraded"] as? Boolean == true) {
                     @Suppress("UNCHECKED_CAST")
@@ -428,7 +463,7 @@ class SubmissionServiceImpl(
             examId = submission.examId,
             examTitle = examTitle,
             userId = submission.userId,
-            userName = user.realName ?: user.username,
+            userName = userName,
             answers = submission.answers,
             objectiveScore = objectiveScore,
             subjectiveScore = subjectiveScore,

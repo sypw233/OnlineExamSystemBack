@@ -11,6 +11,7 @@ import ovo.sypw.onlineexamsystemback.dto.response.AiConfigResponse
 import ovo.sypw.onlineexamsystemback.dto.response.AiGradingResponse
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.service.AiGradingService
+import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.*
@@ -171,7 +172,7 @@ class AiGradingController(
         }
 
         return try {
-            val updated = aiGradingService.updateConfig(request, user.id ?: 0L)
+            val updated = aiGradingService.updateConfig(request, user.safeId)
             Result.success(updated, "配置更新成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "配置不存在", 404)

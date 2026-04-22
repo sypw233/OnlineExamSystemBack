@@ -10,6 +10,7 @@ import ovo.sypw.onlineexamsystemback.dto.request.QuestionRequest
 import ovo.sypw.onlineexamsystemback.dto.response.QuestionResponse
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.service.QuestionService
+import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
@@ -60,7 +61,7 @@ class QuestionController(
         }
 
         return try {
-            val question = questionService.createQuestion(request, user.id ?: 0L)
+            val question = questionService.createQuestion(request, user.safeId)
             Result.success(question, "题目创建成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "创建失败", 400)
@@ -122,7 +123,11 @@ class QuestionController(
 
         return try {
             val question = questionService.getQuestionById(id)
-            Result.success(question)
+            // Students must not see answer or analysis
+            val sanitized = if (user.role == "student") {
+                question.copy(answer = null, analysis = null)
+            } else question
+            Result.success(sanitized)
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "题目不存在", 404)
         }
@@ -146,7 +151,7 @@ class QuestionController(
             ?: return Result.error("用户不存在", 404)
 
         return try {
-            val question = questionService.updateQuestion(id, request, user.id ?: 0L, user.role)
+            val question = questionService.updateQuestion(id, request, user.safeId, user.role)
             Result.success(question, "题目更新成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "更新失败", 400)
@@ -170,7 +175,7 @@ class QuestionController(
             ?: return Result.error("用户不存在", 404)
 
         return try {
-            questionService.deleteQuestion(id, user.id ?: 0L, user.role)
+            questionService.deleteQuestion(id, user.safeId, user.role)
             Result.success("题目删除成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "删除失败", 400)

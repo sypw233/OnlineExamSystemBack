@@ -69,7 +69,7 @@ class ExamServiceImpl(
         )
 
         val savedExam = examRepository.save(exam)
-        return toExamResponse(savedExam, course.courseName, creator.realName ?: creator.username)
+        return toExamResponse(savedExam, course.courseName, creator.realName ?: creator.username, 0)
     }
 
     override fun updateExam(id: Long, examRequest: ExamRequest, userId: Long, userRole: String): ExamResponse {
@@ -120,7 +120,8 @@ class ExamServiceImpl(
             throw IllegalArgumentException("创建者不存在")
         }
 
-        return toExamResponse(updatedExam, course.courseName, creator.realName ?: creator.username)
+        val questionCount = examQuestionRepository.countByExamId(id)
+        return toExamResponse(updatedExam, course.courseName, creator.realName ?: creator.username, questionCount)
     }
 
     override fun deleteExam(id: Long, userId: Long, userRole: String) {
@@ -157,31 +158,41 @@ class ExamServiceImpl(
         val creator = userRepository.findById(exam.creatorId).orElseThrow {
             throw IllegalArgumentException("创建者不存在")
         }
-
-        return toExamResponse(exam, course.courseName, creator.realName ?: creator.username)
+        val questionCount = examQuestionRepository.countByExamId(id)
+        return toExamResponse(exam, course.courseName, creator.realName ?: creator.username, questionCount)
     }
 
     override fun getAllExams(pageable: Pageable): Page<ExamResponse> {
-        return examRepository.findAll(pageable).map { exam ->
-            val course = courseRepository.findById(exam.courseId).orElseThrow {
-                throw IllegalArgumentException("课程不存在")
-            }
-            val creator = userRepository.findById(exam.creatorId).orElseThrow {
-                throw IllegalArgumentException("创建者不存在")
-            }
-            toExamResponse(exam, course.courseName, creator.realName ?: creator.username)
+        val examPage = examRepository.findAll(pageable)
+        val courseIds = examPage.content.map { it.courseId }.toSet()
+        val creatorIds = examPage.content.map { it.creatorId }.toSet()
+        val courses = courseRepository.findAllById(courseIds).associateBy { it.id }
+        val creators = userRepository.findAllById(creatorIds).associateBy { it.id }
+        val examIds = examPage.content.mapNotNull { it.id }
+        val questionCounts = examQuestionRepository.countByExamIdIn(examIds)
+            .associate { (it[0] as Number).toLong() to (it[1] as Number).toLong() }
+
+        return examPage.map { exam ->
+            val course = courses[exam.courseId] ?: throw IllegalArgumentException("课程不存在")
+            val creator = creators[exam.creatorId] ?: throw IllegalArgumentException("创建者不存在")
+            toExamResponse(exam, course.courseName, creator.realName ?: creator.username, questionCounts[exam.id] ?: 0)
         }
     }
 
     override fun getExamsByStatus(status: Int, pageable: Pageable): Page<ExamResponse> {
-        return examRepository.findByStatus(status, pageable).map { exam ->
-            val course = courseRepository.findById(exam.courseId).orElseThrow {
-                throw IllegalArgumentException("课程不存在")
-            }
-            val creator = userRepository.findById(exam.creatorId).orElseThrow {
-                throw IllegalArgumentException("创建者不存在")
-            }
-            toExamResponse(exam, course.courseName, creator.realName ?: creator.username)
+        val examPage = examRepository.findByStatus(status, pageable)
+        val courseIds = examPage.content.map { it.courseId }.toSet()
+        val creatorIds = examPage.content.map { it.creatorId }.toSet()
+        val courses = courseRepository.findAllById(courseIds).associateBy { it.id }
+        val creators = userRepository.findAllById(creatorIds).associateBy { it.id }
+        val examIds = examPage.content.mapNotNull { it.id }
+        val questionCounts = examQuestionRepository.countByExamIdIn(examIds)
+            .associate { (it[0] as Number).toLong() to (it[1] as Number).toLong() }
+
+        return examPage.map { exam ->
+            val course = courses[exam.courseId] ?: throw IllegalArgumentException("课程不存在")
+            val creator = creators[exam.creatorId] ?: throw IllegalArgumentException("创建者不存在")
+            toExamResponse(exam, course.courseName, creator.realName ?: creator.username, questionCounts[exam.id] ?: 0)
         }
     }
 
@@ -190,24 +201,33 @@ class ExamServiceImpl(
             throw IllegalArgumentException("课程不存在")
         }
 
-        return examRepository.findByCourseId(courseId, pageable).map { exam ->
-            val creator = userRepository.findById(exam.creatorId).orElseThrow {
-                throw IllegalArgumentException("创建者不存在")
-            }
-            toExamResponse(exam, course.courseName, creator.realName ?: creator.username)
+        val examPage = examRepository.findByCourseId(courseId, pageable)
+        val creatorIds = examPage.content.map { it.creatorId }.toSet()
+        val creators = userRepository.findAllById(creatorIds).associateBy { it.id }
+        val examIds = examPage.content.mapNotNull { it.id }
+        val questionCounts = examQuestionRepository.countByExamIdIn(examIds)
+            .associate { (it[0] as Number).toLong() to (it[1] as Number).toLong() }
+
+        return examPage.map { exam ->
+            val creator = creators[exam.creatorId] ?: throw IllegalArgumentException("创建者不存在")
+            toExamResponse(exam, course.courseName, creator.realName ?: creator.username, questionCounts[exam.id] ?: 0)
         }
     }
 
     override fun getMyExams(userId: Long): List<ExamResponse> {
         val exams = examRepository.findByCreatorId(userId)
+        val courseIds = exams.map { it.courseId }.toSet()
+        val courses = courseRepository.findAllById(courseIds).associateBy { it.id }
+        val creator = userRepository.findById(userId).orElseThrow {
+            throw IllegalArgumentException("用户不存在")
+        }
+        val examIds = exams.mapNotNull { it.id }
+        val questionCounts = examQuestionRepository.countByExamIdIn(examIds)
+            .associate { (it[0] as Number).toLong() to (it[1] as Number).toLong() }
+
         return exams.map { exam ->
-            val course = courseRepository.findById(exam.courseId).orElseThrow {
-                throw IllegalArgumentException("课程不存在")
-            }
-            val creator = userRepository.findById(userId).orElseThrow {
-                throw IllegalArgumentException("用户不存在")
-            }
-            toExamResponse(exam, course.courseName, creator.realName ?: creator.username)
+            val course = courses[exam.courseId] ?: throw IllegalArgumentException("课程不存在")
+            toExamResponse(exam, course.courseName, creator.realName ?: creator.username, questionCounts[exam.id] ?: 0)
         }
     }
 
@@ -215,14 +235,19 @@ class ExamServiceImpl(
         val courseIds = courseRepository.findByTeacherId(teacherId).map { it.id ?: 0L }
         if (courseIds.isEmpty()) return Page.empty(pageable)
 
-        return examRepository.findByCourseIdIn(courseIds, pageable).map { exam ->
-            val course = courseRepository.findById(exam.courseId).orElseThrow {
-                throw IllegalArgumentException("课程不存在")
-            }
-            val creator = userRepository.findById(exam.creatorId).orElseThrow {
-                throw IllegalArgumentException("创建者不存在")
-            }
-            toExamResponse(exam, course.courseName, creator.realName ?: creator.username)
+        val examPage = examRepository.findByCourseIdIn(courseIds, pageable)
+        val allCourseIds = examPage.content.map { it.courseId }.toSet()
+        val creatorIds = examPage.content.map { it.creatorId }.toSet()
+        val courses = courseRepository.findAllById(allCourseIds).associateBy { it.id }
+        val creators = userRepository.findAllById(creatorIds).associateBy { it.id }
+        val examIds = examPage.content.mapNotNull { it.id }
+        val questionCounts = examQuestionRepository.countByExamIdIn(examIds)
+            .associate { (it[0] as Number).toLong() to (it[1] as Number).toLong() }
+
+        return examPage.map { exam ->
+            val course = courses[exam.courseId] ?: throw IllegalArgumentException("课程不存在")
+            val creator = creators[exam.creatorId] ?: throw IllegalArgumentException("创建者不存在")
+            toExamResponse(exam, course.courseName, creator.realName ?: creator.username, questionCounts[exam.id] ?: 0)
         }
     }
 
@@ -232,14 +257,19 @@ class ExamServiceImpl(
         courseId: Long?,
         pageable: Pageable
     ): Page<ExamResponse> {
-        return examRepository.searchExams(creatorId, status, courseId, pageable).map { exam ->
-            val course = courseRepository.findById(exam.courseId).orElseThrow {
-                throw IllegalArgumentException("课程不存在")
-            }
-            val creator = userRepository.findById(exam.creatorId).orElseThrow {
-                throw IllegalArgumentException("创建者不存在")
-            }
-            toExamResponse(exam, course.courseName, creator.realName ?: creator.username)
+        val examPage = examRepository.searchExams(creatorId, status, courseId, pageable)
+        val courseIds = examPage.content.map { it.courseId }.toSet()
+        val creatorIds = examPage.content.map { it.creatorId }.toSet()
+        val courses = courseRepository.findAllById(courseIds).associateBy { it.id }
+        val creators = userRepository.findAllById(creatorIds).associateBy { it.id }
+        val examIds = examPage.content.mapNotNull { it.id }
+        val questionCounts = examQuestionRepository.countByExamIdIn(examIds)
+            .associate { (it[0] as Number).toLong() to (it[1] as Number).toLong() }
+
+        return examPage.map { exam ->
+            val course = courses[exam.courseId] ?: throw IllegalArgumentException("课程不存在")
+            val creator = creators[exam.creatorId] ?: throw IllegalArgumentException("创建者不存在")
+            toExamResponse(exam, course.courseName, creator.realName ?: creator.username, questionCounts[exam.id] ?: 0)
         }
     }
 
@@ -261,8 +291,8 @@ class ExamServiceImpl(
                     if (exam.status != 0) {
                         throw IllegalArgumentException("只有草稿状态的考试可以发布")
                     }
-                    val questionCount = examQuestionRepository.countByExamId(id)
-                    if (questionCount == 0L) {
+                    val qc = examQuestionRepository.countByExamId(id)
+                    if (qc == 0L) {
                         throw IllegalArgumentException("考试至少需要包含一道题目才能发布")
                     }
                     val now = LocalDateTime.now()
@@ -282,7 +312,8 @@ class ExamServiceImpl(
         val creator = userRepository.findById(exam.creatorId).orElseThrow {
             throw IllegalArgumentException("创建者不存在")
         }
-        return toExamResponse(patchedExam, course.courseName, creator.realName ?: creator.username)
+        val finalQuestionCount = examQuestionRepository.countByExamId(id)
+        return toExamResponse(patchedExam, course.courseName, creator.realName ?: creator.username, finalQuestionCount)
     }
 
     override fun publishExam(id: Long, userId: Long, userRole: String): ExamResponse {
@@ -321,8 +352,7 @@ class ExamServiceImpl(
         val creator = userRepository.findById(exam.creatorId).orElseThrow {
             throw IllegalArgumentException("创建者不存在")
         }
-
-        return toExamResponse(publishedExam, course.courseName, creator.realName ?: creator.username)
+        return toExamResponse(publishedExam, course.courseName, creator.realName ?: creator.username, questionCount)
     }
 
     override fun addQuestionToExam(examId: Long, request: ExamQuestionRequest, userId: Long, userRole: String) {
@@ -390,9 +420,11 @@ class ExamServiceImpl(
         }
 
         val examQuestions = examQuestionRepository.findByExamIdOrderBySequence(examId)
+        val questionIds = examQuestions.map { it.questionId }
+        val questions = questionRepository.findAllById(questionIds).associateBy { it.id }
+
         return examQuestions.mapNotNull { eq ->
-            val question = questionRepository.findById(eq.questionId).orElse(null)
-            question?.let {
+            questions[eq.questionId]?.let {
                 ExamQuestionResponse(
                     examId = eq.examId,
                     questionId = eq.questionId,
@@ -423,8 +455,7 @@ class ExamServiceImpl(
         }
     }
 
-    private fun toExamResponse(exam: Exam, courseName: String, creatorName: String): ExamResponse {
-        val questionCount = examQuestionRepository.countByExamId(exam.id ?: 0L)
+    private fun toExamResponse(exam: Exam, courseName: String, creatorName: String, questionCount: Long): ExamResponse {
         val statusDescription = when (exam.status) {
             0 -> "草稿"
             1 -> "已发布"

@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.tags.Tag
 import ovo.sypw.onlineexamsystemback.dto.response.FileUploadResponse
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.service.FileService
+import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.http.MediaType
 import org.springframework.security.core.context.SecurityContextHolder
@@ -81,7 +82,7 @@ class FileController(
         }
 
         return try {
-            val response = fileService.uploadImage(file, category, user.id ?: 0L)
+            val response = fileService.uploadImage(file, category, user.safeId)
             Result.success(response, "图片上传成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "上传失败", 400)
@@ -146,7 +147,7 @@ class FileController(
         }
 
         return try {
-            val response = fileService.uploadDocument(file, category, user.id ?: 0L)
+            val response = fileService.uploadDocument(file, category, user.safeId)
             Result.success(response, "文档上传成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "上传失败", 400)
@@ -189,7 +190,7 @@ class FileController(
         }
 
         return try {
-            fileService.deleteFile(fileKey, user.id ?: 0L, user.role)
+            fileService.deleteFile(fileKey, user.safeId, user.role)
             Result.success("删除成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "删除失败", 400)

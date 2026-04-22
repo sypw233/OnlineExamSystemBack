@@ -1,6 +1,7 @@
 package ovo.sypw.onlineexamsystemback.service.scheduled
 
 import ovo.sypw.onlineexamsystemback.repository.ExamRepository
+import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -11,6 +12,8 @@ import java.time.LocalDateTime
 class ExamScheduledService(
     private val examRepository: ExamRepository
 ) {
+
+    private val logger = LoggerFactory.getLogger(ExamScheduledService::class.java)
 
     /**
      * Auto-end published exams that have passed their end time
@@ -27,7 +30,7 @@ class ExamScheduledService(
         }
 
         if (expiredExams.isNotEmpty()) {
-            println("[Scheduled] Auto-ended ${expiredExams.size} expired exams")
+            logger.info("[Scheduled] Auto-ended {} expired exams", expiredExams.size)
         }
     }
 }

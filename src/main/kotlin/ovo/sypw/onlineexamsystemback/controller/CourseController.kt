@@ -10,6 +10,7 @@ import ovo.sypw.onlineexamsystemback.dto.response.CourseResponse
 import ovo.sypw.onlineexamsystemback.dto.response.EnrollmentResponse
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.service.CourseService
+import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
@@ -42,7 +43,7 @@ class CourseController(
             return Result.error("只有教师和管理员可以创建课程", 403)
         }
 
-        val course = courseService.createCourse(courseRequest, user.id ?: 0L)
+        val course = courseService.createCourse(courseRequest, user.safeId)
         return Result.success(course, "课程创建成功")
     }
 
@@ -110,7 +111,7 @@ class CourseController(
             ?: return Result.error("用户不存在", 404)
 
         return try {
-            val course = courseService.updateCourse(id, courseRequest, user.id ?: 0L, user.role)
+            val course = courseService.updateCourse(id, courseRequest, user.safeId, user.role)
             Result.success(course, "课程更新成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "更新失败", 400)
@@ -134,7 +135,7 @@ class CourseController(
             ?: return Result.error("用户不存在", 404)
 
         return try {
-            courseService.deleteCourse(id, user.id ?: 0L, user.role)
+            courseService.deleteCourse(id, user.safeId, user.role)
             Result.success("课程删除成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "删除失败", 400)
@@ -162,7 +163,7 @@ class CourseController(
         }
 
         return try {
-            val enrollment = courseService.enrollStudent(id, user.id ?: 0L)
+            val enrollment = courseService.enrollStudent(id, user.safeId)
             Result.success(enrollment, "选课成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "选课失败", 400)
@@ -183,7 +184,7 @@ class CourseController(
         val user = userRepository.findByUsername(username)
             ?: return Result.error("用户不存在", 404)
 
-        val courses = courseService.getMyCourses(user.id ?: 0L, user.role)
+        val courses = courseService.getMyCourses(user.safeId, user.role)
         return Result.success(courses)
     }
 
@@ -208,7 +209,7 @@ class CourseController(
         }
 
         return try {
-            val enrollments = courseService.getEnrolledStudents(id, user.id ?: 0L, user.role)
+            val enrollments = courseService.getEnrolledStudents(id, user.safeId, user.role)
             Result.success(enrollments)
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "查询失败", 400)
@@ -233,7 +234,7 @@ class CourseController(
             return Result.error("只有学生可以查看选课记录", 403)
         }
 
-        val enrollments = courseService.getMyEnrollments(user.id ?: 0L)
+        val enrollments = courseService.getMyEnrollments(user.safeId)
         return Result.success(enrollments)
     }
 }
