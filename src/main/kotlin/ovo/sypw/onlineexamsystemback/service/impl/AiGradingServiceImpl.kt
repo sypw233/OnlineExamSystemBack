@@ -1,6 +1,9 @@
 package ovo.sypw.onlineexamsystemback.service.impl
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -11,12 +14,13 @@ import ovo.sypw.onlineexamsystemback.dto.request.AiConfigRequest
 import ovo.sypw.onlineexamsystemback.dto.request.AiGradingRequest
 import ovo.sypw.onlineexamsystemback.dto.response.*
 import ovo.sypw.onlineexamsystemback.entity.AiConfig
+import ovo.sypw.onlineexamsystemback.entity.ExamQuestion
 import ovo.sypw.onlineexamsystemback.repository.*
 import ovo.sypw.onlineexamsystemback.service.AiGradingService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
-import java.util.concurrent.*
+import java.util.concurrent.TimeUnit
 
 @Service
 @Transactional
@@ -267,45 +271,47 @@ class AiGradingServiceImpl(
             ?: aiConfigRepository.findByConfigKey("ai_batch_concurrency")?.configValue?.toIntOrNull()?.coerceIn(1, 10)
             ?: 5
 
-        // 6. Parallel AI grading using thread pool
-        val threadPool = Executors.newFixedThreadPool(concurrency)
-        val futures = subjectiveExamQuestions.map { eq ->
-            CompletableFuture.supplyAsync({
-                val question = questions[eq.questionId]!!
-                val studentAnswer = studentAnswers[eq.questionId.toString()] ?: ""
+        // 6. Parallel AI grading using coroutines with explicit types
+        val gradingResults: List<AiGradingDetail> = runBlocking {
+            val semaphore = Semaphore(concurrency)
+            val deferreds: List<Deferred<AiGradingDetail>> = subjectiveExamQuestions.map { eq: ExamQuestion ->
+                async(Dispatchers.IO) {
+                    semaphore.withPermit {
+                        val question = questions[eq.questionId]!!
+                        val studentAnswer = studentAnswers[eq.questionId.toString()] ?: ""
 
-                try {
-                    val aiRequest = AiGradingRequest(
-                        questionId = eq.questionId,
-                        studentAnswer = studentAnswer,
-                        maxScore = eq.score
-                    )
-                    val aiResponse = gradeWithAI(aiRequest)
-                    AiGradingDetail(
-                        questionId = eq.questionId,
-                        questionContent = question.content,
-                        suggestedScore = aiResponse.suggestedScore,
-                        maxScore = eq.score,
-                        explanation = aiResponse.explanation,
-                        strengths = aiResponse.strengths,
-                        improvements = aiResponse.improvements
-                    )
-                } catch (e: Exception) {
-                    AiGradingDetail(
-                        questionId = eq.questionId,
-                        questionContent = question.content,
-                        suggestedScore = 0,
-                        maxScore = eq.score,
-                        explanation = "AI评分失败: ${e.message}",
-                        strengths = emptyList(),
-                        improvements = listOf("请手动评分")
-                    )
+                        try {
+                            val aiRequest = AiGradingRequest(
+                                questionId = eq.questionId,
+                                studentAnswer = studentAnswer,
+                                maxScore = eq.score
+                            )
+                            val aiResponse = gradeWithAI(aiRequest)
+                            AiGradingDetail(
+                                questionId = eq.questionId,
+                                questionContent = question.content,
+                                suggestedScore = aiResponse.suggestedScore,
+                                maxScore = eq.score,
+                                explanation = aiResponse.explanation,
+                                strengths = aiResponse.strengths,
+                                improvements = aiResponse.improvements
+                            )
+                        } catch (e: Exception) {
+                            AiGradingDetail(
+                                questionId = eq.questionId,
+                                questionContent = question.content,
+                                suggestedScore = 0,
+                                maxScore = eq.score,
+                                explanation = "AI评分失败: ${e.message}",
+                                strengths = emptyList(),
+                                improvements = listOf("请手动评分")
+                            )
+                        }
+                    }
                 }
-            }, threadPool)
+            }
+            deferreds.awaitAll()
         }
-
-        val gradingResults = futures.map { it.join() }
-        threadPool.shutdown()
 
         // 7. Calculate total suggested score for subjective questions
         val totalSubjectiveSuggestedScore = gradingResults.sumOf { it.suggestedScore }
