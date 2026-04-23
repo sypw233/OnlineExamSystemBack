@@ -33,7 +33,17 @@ class AuthController(
 ) {
 
     @PostMapping("/login")
-    @Operation(summary = "用户登录", description = "通过用户名和密码登录，返回JWT Token")
+    @Operation(
+        summary = "用户登录",
+        description = """
+            通过用户名和密码登录，返回JWT Token
+            
+            ## 说明
+            - 公开端点，无需认证
+            - 成功返回 accessToken 和 refreshToken
+            - 失败返回 401 错误
+        """
+    )
     fun login(@Valid @RequestBody loginRequest: LoginRequest): Result<AuthResponse> {
         val authentication = authenticationManager.authenticate(
             UsernamePasswordAuthenticationToken(
@@ -66,7 +76,18 @@ class AuthController(
     }
 
     @PostMapping("/register")
-    @Operation(summary = "用户注册", description = "注册新用户账号（仅支持学生和教师注册）")
+    @Operation(
+        summary = "用户注册",
+        description = """
+            注册新用户账号（仅支持学生和教师注册）
+            
+            ## 说明
+            - 公开端点，无需认证
+            - 禁止注册管理员账号
+            - 用户名只能包含字母、数字和下划线
+            - 密码长度必须在6-20之间
+        """
+    )
     fun register(@Valid @RequestBody registerRequest: RegisterRequest): Result<AuthResponse> {
         if (registerRequest.username.isBlank() || registerRequest.password.isBlank()) {
             return Result.error("用户名或者密码为空", 400)
@@ -117,7 +138,17 @@ class AuthController(
     }
 
     @PostMapping("/refresh")
-    @Operation(summary = "刷新Token", description = "使用刷新Token获取新的访问Token")
+    @Operation(
+        summary = "刷新Token",
+        description = """
+            使用刷新Token获取新的访问Token
+            
+            ## 说明
+            - 公开端点，无需认证
+            - 传入 Bearer 格式的刷新Token
+            - 返回新的 accessToken 和 refreshToken
+        """
+    )
     fun refreshToken(
         @Parameter(description = "Bearer Token", required = true)
         @RequestHeader("Authorization") authorization: String
