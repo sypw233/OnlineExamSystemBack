@@ -35,7 +35,7 @@ dependencies{
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.3")
     
     // File Upload
-    implementation("commons-io:commons-io:2.15.1")
+    implementation("commons-io:commons-io:2.16.1")
     
     // Baidu Cloud BOS SDK - exclude old commons-io to avoid conflicts with POI
     implementation("com.baidubce:bce-java-sdk:0.10.165") {
@@ -68,7 +68,7 @@ tasks.jacocoTestReport {
 
 configurations.all {
     resolutionStrategy {
-        force("commons-io:commons-io:2.15.1")
+        force("commons-io:commons-io:2.16.1")
     }
 }
 
