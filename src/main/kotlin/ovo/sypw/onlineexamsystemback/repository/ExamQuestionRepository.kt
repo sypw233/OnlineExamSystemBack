@@ -18,7 +18,11 @@ interface ExamQuestionRepository : JpaRepository<ExamQuestion, Long> {
     // Remove question from exam
     @Transactional
     fun deleteByExamIdAndQuestionId(examId: Long, questionId: Long)
-    
+
+    // Remove all questions from exam (for random compose overwrite)
+    @Transactional
+    fun deleteByExamId(examId: Long)
+
     // Count questions in exam
     fun countByExamId(examId: Long): Long
 

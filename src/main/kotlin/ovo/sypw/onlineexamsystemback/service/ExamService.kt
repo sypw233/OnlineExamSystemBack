@@ -1,5 +1,6 @@
 package ovo.sypw.onlineexamsystemback.service
 
+import ovo.sypw.onlineexamsystemback.dto.request.ComposeRandomExamRequest
 import ovo.sypw.onlineexamsystemback.dto.request.ExamQuestionRequest
 import ovo.sypw.onlineexamsystemback.dto.request.ExamRequest
 import ovo.sypw.onlineexamsystemback.dto.response.BatchDeleteResult
@@ -44,6 +45,14 @@ interface ExamService {
 
     // Student exam paper (questions without answers)
     fun getExamPaper(examId: Long, studentId: Long): List<ExamPaperQuestionResponse>
+
+    // Random compose exam
+    fun composeRandomExam(
+        examId: Long,
+        request: ComposeRandomExamRequest,
+        userId: Long,
+        userRole: String
+    ): ExamResponse
 
     // Batch delete
     fun batchDelete(ids: List<Long>, userId: Long, userRole: String): BatchDeleteResult

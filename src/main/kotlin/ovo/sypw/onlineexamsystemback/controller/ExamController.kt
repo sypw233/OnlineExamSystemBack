@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
 import ovo.sypw.onlineexamsystemback.dto.request.BatchDeleteRequest
+import ovo.sypw.onlineexamsystemback.dto.request.ComposeRandomExamRequest
 import ovo.sypw.onlineexamsystemback.dto.request.ExamQuestionRequest
 import ovo.sypw.onlineexamsystemback.dto.request.ExamRequest
 import ovo.sypw.onlineexamsystemback.dto.response.ExamQuestionResponse
@@ -367,6 +368,74 @@ class ExamController(
             Result.success(questions)
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "获取试卷失败", 400)
+        }
+    }
+
+    @PostMapping("/{id}/compose-random")
+    @Operation(
+        summary = "智能随机组卷",
+        description = """
+            根据组卷规则从指定题库中随机抽取题目生成试卷
+            
+            ## 组卷规则说明
+            - 按题型分section配置，每个section可独立设置难度分配
+            - 支持绝对数量难度分配（如 easy:4, medium:4, hard:2）
+            - 不指定难度分配时，从该题型所有题目中随机抽取
+            
+            ## 覆盖模式
+            - 组卷会清空考试原有题目，重新生成
+            - 仅草稿状态的考试可以组卷
+            
+            ## 严格模式与宽松模式
+            - 严格模式（默认）：某难度题目不足时直接报错
+            - 宽松模式：某难度不足时，自动从同题型其他难度补齐
+            
+            ## 请求示例
+            ```json
+            {
+              "bankId": 1,
+              "expectedTotalScore": 100,
+              "sections": [
+                {
+                  "type": "single",
+                  "count": 10,
+                  "scorePerQuestion": 2,
+                  "difficultyDistribution": {"easy": 4, "medium": 4, "hard": 2}
+                },
+                {
+                  "type": "multiple",
+                  "count": 5,
+                  "scorePerQuestion": 4,
+                  "difficultyDistribution": {"easy": 2, "medium": 2, "hard": 1}
+                }
+              ],
+              "options": {
+                "shuffleQuestions": true,
+                "lenientMode": false
+              }
+            }
+            ```
+            
+            ## 权限
+            - 教师只能对自己的考试组卷
+            - 管理员可以对任何考试组卷
+        """,
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
+    fun composeRandomExam(
+        @CurrentUser user: User,
+        @Parameter(description = "考试ID", example = "1") @PathVariable id: Long,
+        @Valid @RequestBody request: ComposeRandomExamRequest
+    ): Result<ExamResponse> {
+        if (user.role != "teacher" && user.role != "admin") {
+            return Result.error("只有教师和管理员可以组卷", 403)
+        }
+
+        return try {
+            val exam = examService.composeRandomExam(id, request, user.safeId, user.role)
+            Result.success(exam, "组卷成功")
+        } catch (e: IllegalArgumentException) {
+            Result.error(e.message ?: "组卷失败", 400)
         }
     }
 }

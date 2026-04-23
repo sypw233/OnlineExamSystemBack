@@ -1,5 +1,6 @@
 package ovo.sypw.onlineexamsystemback.service.impl
 
+import ovo.sypw.onlineexamsystemback.dto.request.ComposeRandomExamRequest
 import ovo.sypw.onlineexamsystemback.dto.request.ExamQuestionRequest
 import ovo.sypw.onlineexamsystemback.dto.request.ExamRequest
 import ovo.sypw.onlineexamsystemback.dto.response.*
@@ -26,6 +27,7 @@ class ExamServiceImpl(
     private val questionRepository: QuestionRepository,
     private val submissionRepository: ExamSubmissionRepository,
     private val courseSelectionRepository: CourseSelectionRepository,
+    private val questionBankQuestionRepository: QuestionBankQuestionRepository,
     private val notificationService: NotificationService
 ) : ExamService {
 
@@ -596,6 +598,191 @@ class ExamServiceImpl(
                 )
             }
         }
+    }
+
+    override fun composeRandomExam(
+        examId: Long,
+        request: ComposeRandomExamRequest,
+        userId: Long,
+        userRole: String
+    ): ExamResponse {
+        val exam = examRepository.findById(examId).orElseThrow {
+            throw IllegalArgumentException("考试不存在")
+        }
+
+        // Permission check
+        if (userRole != "admin" && exam.creatorId != userId) {
+            throw IllegalArgumentException("您没有权限修改此考试")
+        }
+
+        // Only draft exams can be composed
+        if (exam.status != 0) {
+            throw IllegalArgumentException("只有草稿状态的考试可以组卷")
+        }
+
+        // Validate bank exists
+        val bankId = request.bankId!!
+        if (!questionBankQuestionRepository.findByBankId(bankId).any()) {
+            throw IllegalArgumentException("题库不存在或题库为空")
+        }
+
+        val validTypes = setOf("single", "multiple", "true_false", "fill_blank", "short_answer")
+        val validDifficulties = setOf("easy", "medium", "hard")
+        val lenientMode = request.options?.lenientMode ?: false
+
+        // Fetch all questions in the bank
+        val bankQuestions = questionBankQuestionRepository.findByBankId(bankId)
+        val questionIds = bankQuestions.map { it.questionId }
+        val allQuestions = questionRepository.findAllById(questionIds)
+
+        // Build candidate pools: type -> difficulty -> list of questions
+        val candidatePool: Map<String, Map<String, List<ovo.sypw.onlineexamsystemback.entity.Question>>> = allQuestions
+            .groupBy { it.type }
+            .mapValues { (_, questions) ->
+                questions.groupBy { it.difficulty }
+            }
+
+        // Collect selected exam questions
+        val selectedExamQuestions = mutableListOf<ExamQuestion>()
+        val selectedQuestionIds = mutableSetOf<Long>()
+
+        for ((sectionIndex, section) in request.sections.withIndex()) {
+            // Validate type
+            if (section.type !in validTypes) {
+                throw IllegalArgumentException("题型 '${section.type}' 无效")
+            }
+
+            // Validate count and score
+            if (section.count <= 0) {
+                throw IllegalArgumentException("题目数量必须大于0")
+            }
+            if (section.scorePerQuestion <= 0) {
+                throw IllegalArgumentException("每题分值必须大于0")
+            }
+
+            // Validate difficulty distribution if provided
+            val distribution = section.difficultyDistribution
+            if (distribution != null) {
+                val total = distribution.values.sum()
+                if (total != section.count) {
+                    throw IllegalArgumentException(
+                        "题型 '${section.type}' 的难度分配之和($total) 不等于题目数量(${section.count})"
+                    )
+                }
+                for ((diff, _) in distribution) {
+                    if (diff !in validDifficulties) {
+                        throw IllegalArgumentException("难度 '$diff' 无效")
+                    }
+                }
+            }
+
+            // Pick questions
+            val typeCandidates = candidatePool[section.type]
+                ?: throw IllegalArgumentException("题库中不存在 '${section.type}' 类型的题目")
+
+            val pickedQuestions = mutableListOf<ovo.sypw.onlineexamsystemback.entity.Question>()
+
+            if (distribution != null) {
+                // Strict difficulty distribution
+                val deficits = mutableListOf<Pair<String, Int>>() // (difficulty, shortage)
+
+                for ((difficulty, needed) in distribution) {
+                    val pool = typeCandidates[difficulty]?.filter { q -> (q.id ?: 0L) !in selectedQuestionIds }
+                        ?: emptyList()
+                    val shuffled = pool.shuffled()
+                    if (shuffled.size < needed) {
+                        if (!lenientMode) {
+                            throw IllegalArgumentException(
+                                "题库中 '${section.type}' 类型的 '$difficulty' 难度题目不足，需要 $needed 道，实际只有 ${shuffled.size} 道"
+                            )
+                        }
+                        deficits.add(difficulty to (needed - shuffled.size))
+                        pickedQuestions.addAll(shuffled)
+                    } else {
+                        pickedQuestions.addAll(shuffled.take(needed))
+                    }
+                }
+
+                // Lenient mode: fill deficits from other difficulties of the same type
+                if (lenientMode && deficits.isNotEmpty()) {
+                    val totalDeficit = deficits.sumOf { it.second }
+                    val pickedIds = pickedQuestions.mapNotNull { it.id }.toSet()
+                    val otherPool = typeCandidates.flatMap { (diff, questions) ->
+                        if (distribution.containsKey(diff)) emptyList()
+                        else questions.filter { q -> (q.id ?: 0L) !in selectedQuestionIds && (q.id ?: 0L) !in pickedIds }
+                    }.shuffled()
+                    if (otherPool.size < totalDeficit) {
+                        throw IllegalArgumentException(
+                            "题库中 '${section.type}' 类型题目总数不足，需要 ${section.count} 道，实际只有 ${pickedQuestions.size + otherPool.size} 道"
+                        )
+                    }
+                    pickedQuestions.addAll(otherPool.take(totalDeficit))
+                }
+            } else {
+                // No difficulty distribution: random from all difficulties of this type
+                val pool = typeCandidates.values.flatten().filter { q -> (q.id ?: 0L) !in selectedQuestionIds }.shuffled()
+                if (pool.size < section.count) {
+                    throw IllegalArgumentException(
+                        "题库中 '${section.type}' 类型题目不足，需要 ${section.count} 道，实际只有 ${pool.size} 道"
+                    )
+                }
+                pickedQuestions.addAll(pool.take(section.count))
+            }
+
+            // Add to selected list
+            for ((index, question) in pickedQuestions.withIndex()) {
+                val qId = question.id ?: throw IllegalStateException("题目ID不能为空")
+                selectedQuestionIds.add(qId)
+                selectedExamQuestions.add(
+                    ExamQuestion(
+                        examId = examId,
+                        questionId = qId,
+                        score = section.scorePerQuestion,
+                        sequence = sectionIndex * 1000 + index + 1
+                    )
+                )
+            }
+        }
+
+        // Shuffle questions if requested
+        val finalQuestions = if (request.options?.shuffleQuestions != false) {
+            selectedExamQuestions.shuffled().mapIndexed { index, eq ->
+                ExamQuestion(
+                    examId = eq.examId,
+                    questionId = eq.questionId,
+                    score = eq.score,
+                    sequence = index + 1
+                )
+            }
+        } else {
+            selectedExamQuestions.sortedBy { it.sequence }
+        }
+
+        // Clear existing questions and save new ones (overwrite mode)
+        examQuestionRepository.deleteByExamId(examId)
+        examQuestionRepository.saveAll(finalQuestions)
+
+        // Update total score
+        val totalScore = request.sections.sumOf { it.count * it.scorePerQuestion }
+        exam.totalScore = totalScore
+
+        // Validate expected total score
+        if (request.expectedTotalScore != null && request.expectedTotalScore != totalScore) {
+            throw IllegalArgumentException(
+                "期望总分 ${request.expectedTotalScore} 分，实际组卷总分 ${totalScore} 分，请检查各题型数量和分值配置"
+            )
+        }
+
+        val savedExam = examRepository.save(exam)
+
+        val course = courseRepository.findById(exam.courseId).orElseThrow {
+            throw IllegalArgumentException("课程不存在")
+        }
+        val creator = userRepository.findById(exam.creatorId).orElseThrow {
+            throw IllegalArgumentException("创建者不存在")
+        }
+        val questionCount = examQuestionRepository.countByExamId(examId)
+        return toExamResponse(savedExam, course.courseName, creator.realName ?: creator.username, questionCount)
     }
 
     override fun batchDelete(ids: List<Long>, userId: Long, userRole: String): BatchDeleteResult {
