@@ -8,7 +8,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import ovo.sypw.onlineexamsystemback.config.OpenAIProperties
 import ovo.sypw.onlineexamsystemback.dto.request.AiBatchGradingRequest
 import ovo.sypw.onlineexamsystemback.dto.request.AiConfigRequest
 import ovo.sypw.onlineexamsystemback.dto.request.AiGradingRequest
@@ -30,7 +29,6 @@ class AiGradingServiceImpl(
     private val examSubmissionRepository: ExamSubmissionRepository,
     private val examQuestionRepository: ExamQuestionRepository,
     private val examRepository: ExamRepository,
-    private val openAIProperties: OpenAIProperties,
     private val objectMapper: ObjectMapper
 ) : AiGradingService {
 
@@ -82,12 +80,21 @@ class AiGradingServiceImpl(
     }
 
     override fun updateConfig(request: AiConfigRequest, userId: Long): AiConfigResponse {
-        val config = aiConfigRepository.findByConfigKey(request.configKey!!)
-            ?: throw IllegalArgumentException("配置不存在: ${request.configKey}")
+        var config = aiConfigRepository.findByConfigKey(request.configKey!!)
 
-        config.configValue = request.configValue
-        config.updatedBy = userId
-        config.updateTime = LocalDateTime.now()
+        if (config == null) {
+            // 配置不存在，创建新配置
+            config = AiConfig(
+                configKey = request.configKey!!,
+                configValue = request.configValue ?: "",
+                description = "AI配置项",
+                updatedBy = userId
+            )
+        } else {
+            config.configValue = request.configValue ?: ""
+            config.updatedBy = userId
+            config.updateTime = LocalDateTime.now()
+        }
 
         val savedConfig = aiConfigRepository.save(config)
         return toConfigResponse(savedConfig)
@@ -142,16 +149,14 @@ class AiGradingServiceImpl(
      * Call OpenAI API
      */
     private fun callOpenAI(requestPayload: Map<String, Any>): String {
-        val apiKey = openAIProperties.apiKey
-        if (apiKey.isBlank()) {
-            throw IllegalStateException("OpenAI API Key未配置")
-        }
+        val apiKey = getApiKey()
+        val apiBaseUrl = getApiBaseUrl()
 
         val jsonBody = objectMapper.writeValueAsString(requestPayload)
         val mediaType = "application/json; charset=utf-8".toMediaType()
 
         val request = Request.Builder()
-            .url("${openAIProperties.apiBaseUrl}/chat/completions")
+            .url("$apiBaseUrl/chat/completions")
             .addHeader("Authorization", "Bearer $apiKey")
             .addHeader("Content-Type", "application/json")
             .post(jsonBody.toRequestBody(mediaType))
@@ -167,6 +172,30 @@ class AiGradingServiceImpl(
 
             return responseBody
         }
+    }
+
+    /**
+     * 获取API Key：优先从数据库读取，为空则从环境变量读取
+     */
+    private fun getApiKey(): String {
+        val dbValue = aiConfigRepository.findByConfigKey("api_key")?.configValue?.takeIf { it.isNotBlank() }
+        if (dbValue != null) {
+            return dbValue
+        }
+        return System.getenv("OPENAI_API_KEY")
+            ?: throw IllegalStateException("OpenAI API Key未配置（请通过接口配置或设置OPENAI_API_KEY环境变量）")
+    }
+
+    /**
+     * 获取API Base URL：优先从数据库读取，为空则从环境变量读取
+     */
+    private fun getApiBaseUrl(): String {
+        val dbValue = aiConfigRepository.findByConfigKey("api_base_url")?.configValue?.takeIf { it.isNotBlank() }
+        if (dbValue != null) {
+            return dbValue
+        }
+        return System.getenv("OPENAI_API_BASE_URL")
+            ?: "https://api.openai.com/v1"
     }
 
     /**
