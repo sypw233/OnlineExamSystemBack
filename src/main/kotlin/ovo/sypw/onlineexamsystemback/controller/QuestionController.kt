@@ -93,6 +93,24 @@ class QuestionController(
         return Result.success(questions)
     }
 
+    @GetMapping("/my")
+    @Operation(
+        summary = "获取我的题目",
+        description = "教师获取自己创建的题目，支持分页",
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
+    fun getMyQuestions(
+        @Parameter(description = "页码", example = "0")
+        @RequestParam(defaultValue = "0") page: Int,
+        @Parameter(description = "每页条数", example = "20")
+        @RequestParam(defaultValue = "20") size: Int,
+        @CurrentUser user: User
+    ): Result<Page<QuestionResponse>> {
+        val pageable = PageRequest.of(page, size.coerceAtMost(100))
+        val questions = questionService.getMyQuestions(user.safeId, pageable)
+        return Result.success(questions)
+    }
+
     @GetMapping("/{id}")
     @Operation(
         summary = "获取题目详情",

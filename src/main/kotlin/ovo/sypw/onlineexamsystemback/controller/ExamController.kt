@@ -118,6 +118,19 @@ class ExamController(
         return Result.success(exams)
     }
 
+    @GetMapping("/my")
+    @Operation(
+        summary = "获取我的考试",
+        description = "教师获取自己创建的考试，学生获取已参加的考试",
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
+    fun getMyExams(
+        @CurrentUser user: User
+    ): Result<List<ExamResponse>> {
+        val exams = examService.getMyExams(user.safeId)
+        return Result.success(exams)
+    }
+
     @GetMapping("/{id}")
     @Operation(
         summary = "获取考试详情",
@@ -207,6 +220,28 @@ class ExamController(
             Result.success(exam, "考试更新成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "更新失败", 400)
+        }
+    }
+
+    @PostMapping("/{id}/publish")
+    @Operation(
+        summary = "发布考试",
+        description = "将草稿状态的考试发布。教师只能发布自己的考试，管理员可发布任何考试。",
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
+    fun publishExam(
+        @CurrentUser user: User,
+        @Parameter(description = "考试ID", example = "1") @PathVariable id: Long
+    ): Result<ExamResponse> {
+        if (user.role != "teacher" && user.role != "admin") {
+            return Result.error("只有教师和管理员可以发布考试", 403)
+        }
+
+        return try {
+            val exam = examService.publishExam(id, user.safeId, user.role)
+            Result.success(exam, "考试发布成功")
+        } catch (e: IllegalArgumentException) {
+            Result.error(e.message ?: "发布失败", 400)
         }
     }
 

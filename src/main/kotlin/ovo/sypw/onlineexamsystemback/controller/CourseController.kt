@@ -61,6 +61,19 @@ class CourseController(
         return Result.success(courses)
     }
 
+    @GetMapping("/my")
+    @Operation(
+        summary = "获取我的课程",
+        description = "教师获取自己创建的课程，学生获取已选课程",
+        security = [SecurityRequirement(name = "Bearer Authentication")]
+    )
+    fun getMyCourses(
+        @CurrentUser user: User
+    ): Result<List<CourseResponse>> {
+        val courses = courseService.getMyCourses(user.safeId, user.role)
+        return Result.success(courses)
+    }
+
     @GetMapping("/{id}")
     @Operation(
         summary = "获取课程详情",
@@ -136,19 +149,6 @@ class CourseController(
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "选课失败", 400)
         }
-    }
-
-    @GetMapping("/my")
-    @Operation(
-        summary = "获取我的课程",
-        description = "教师获取自己创建的课程，学生获取已选课程",
-        security = [SecurityRequirement(name = "Bearer Authentication")]
-    )
-    fun getMyCourses(
-        @CurrentUser user: User
-    ): Result<List<CourseResponse>> {
-        val courses = courseService.getMyCourses(user.safeId, user.role)
-        return Result.success(courses)
     }
 
     @GetMapping("/{id}/students")
