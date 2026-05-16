@@ -12,7 +12,7 @@
 ./gradlew build          # compile + test + assemble
 ```
 
-Requires PostgreSQL on `localhost:5432/exam_system`. Schema auto-migrates via `ddl-auto=update`. Canonical DDL in `schema.sql`. Manual migration scripts: `migration_*.sql` at project root (NO Flyway/Liquibase).
+Requires PostgreSQL on `localhost:5432/exam_system`. Schema auto-migrates via `ddl-auto=update`. Canonical DDL in `database/schema/schema.sql`. Manual migration scripts live in `database/migrations/` (NO Flyway/Liquibase).
 
 ## STRUCTURE
 
