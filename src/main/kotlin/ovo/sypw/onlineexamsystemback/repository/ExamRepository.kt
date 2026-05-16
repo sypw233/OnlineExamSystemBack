@@ -22,6 +22,7 @@ interface ExamRepository : JpaRepository<Exam, Long> {
 
     // Get active exams for a course
     fun findByCourseIdAndStatus(courseId: Long, status: Int): List<Exam>
+    fun findByCourseIdAndStatus(courseId: Long, status: Int, pageable: Pageable): Page<Exam>
 
     // Check ownership
     fun existsByIdAndCreatorId(id: Long, creatorId: Long): Boolean
@@ -32,6 +33,7 @@ interface ExamRepository : JpaRepository<Exam, Long> {
     // Find exams by course IDs (for teacher's teaching exams)
     fun findByCourseIdIn(courseIds: List<Long>): List<Exam>
     fun findByCourseIdIn(courseIds: List<Long>, pageable: Pageable): Page<Exam>
+    fun findByCourseIdInAndStatus(courseIds: List<Long>, status: Int, pageable: Pageable): Page<Exam>
 
     // Find published exams starting within a time range (for reminder scheduling)
     fun findByStatusAndStartTimeBetween(status: Int, start: java.time.LocalDateTime, end: java.time.LocalDateTime): List<Exam>

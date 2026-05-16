@@ -17,6 +17,7 @@ interface UserRepository : JpaRepository<User, Long> {
     fun findByRole(role: String): List<User>
     fun findByRoleAndStatus(role: String, status: Int): List<User>
     fun findByStatus(status: Int): List<User>
+    fun countByRole(role: String): Long
 
     @Query("SELECT u FROM User u WHERE " +
             "(:role IS NULL OR u.role = :role) AND " +

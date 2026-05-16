@@ -16,6 +16,7 @@ import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.*
 
 @RestController
@@ -25,6 +26,7 @@ class QuestionController(
     private val questionService: QuestionService
 ) {
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PostMapping
     @Operation(
         summary = "创建题目",
@@ -50,10 +52,6 @@ class QuestionController(
         @Valid @RequestBody request: QuestionRequest,
         @CurrentUser user: User
     ): Result<QuestionResponse> {
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以创建题目", 403)
-        }
-
         return try {
             val question = questionService.createQuestion(request, user.safeId)
             Result.success(question, "题目创建成功")
@@ -133,9 +131,9 @@ class QuestionController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PutMapping("/{id}")
     @Operation(
-        summary = "更新题目",
         description = "教师更新自己的题目，管理员可更新任何题目",
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
@@ -152,9 +150,9 @@ class QuestionController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @DeleteMapping("/{id}")
     @Operation(
-        summary = "删除题目",
         description = "教师删除自己的题目，管理员可删除任何题目",
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
@@ -170,6 +168,7 @@ class QuestionController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PostMapping("/batch-delete")
     @Operation(
         summary = "批量删除题目",
@@ -180,9 +179,6 @@ class QuestionController(
         @Valid @RequestBody request: BatchDeleteRequest,
         @CurrentUser user: User
     ): Result<ovo.sypw.onlineexamsystemback.dto.response.BatchDeleteResult> {
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以批量删除题目", 403)
-        }
         val result = questionService.batchDelete(request.ids, user.safeId, user.role)
         return Result.success(result, "批量删除完成：成功 ${result.successCount} 条，失败 ${result.failedCount} 条")
     }

@@ -153,6 +153,9 @@ class AuthController(
         @Parameter(description = "Bearer Token", required = true)
         @RequestHeader("Authorization") authorization: String
     ): Result<AuthResponse> {
+        if (!authorization.startsWith("Bearer ")) {
+            return Result.error("无效的认证格式", 401)
+        }
         val token = authorization.substring(7)
 
         if (!jwtTokenProvider.validateToken(token)) {

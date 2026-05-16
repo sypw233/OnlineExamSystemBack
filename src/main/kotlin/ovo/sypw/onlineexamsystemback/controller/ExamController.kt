@@ -22,6 +22,7 @@ import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.*
 
 @RestController
@@ -33,6 +34,7 @@ class ExamController(
     private val courseRepository: CourseRepository
 ) {
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PostMapping
     @Operation(
         summary = "创建考试",
@@ -55,10 +57,6 @@ class ExamController(
         )
         @Valid @RequestBody request: ExamRequest
     ): Result<ExamResponse> {
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以创建考试", 403)
-        }
-
         return try {
             val exam = examService.createExam(request, user.safeId)
             Result.success(exam, "考试创建成功")
@@ -67,6 +65,7 @@ class ExamController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @GetMapping
     @Operation(
         summary = "查询考试列表",
@@ -96,16 +95,11 @@ class ExamController(
                 return Result.error("您没有权限查看此课程的考试", 403)
             }
             val exams = if (courseId != null) {
-                examService.getExamsByCourse(courseId, pageable)
+                examService.getExamsByCourse(courseId, status, pageable)
             } else {
-                examService.getMyTeachingExams(user.safeId, pageable)
+                examService.getMyTeachingExams(user.safeId, status, pageable)
             }
-            // In-memory status filter for teachers (page metadata may be slightly off, acceptable for small datasets)
-            val filtered = if (status != null) {
-                val content = exams.content.filter { it.status == status }
-                org.springframework.data.domain.PageImpl(content, exams.pageable, content.size.toLong())
-            } else exams
-            return Result.success(filtered)
+            return Result.success(exams)
         }
 
         // Admin: use unified search
@@ -149,6 +143,7 @@ class ExamController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PutMapping("/{id}")
     @Operation(
         summary = "更新考试",
@@ -168,6 +163,7 @@ class ExamController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @DeleteMapping("/{id}")
     @Operation(
         summary = "删除考试",
@@ -186,6 +182,7 @@ class ExamController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PostMapping("/batch-delete")
     @Operation(
         summary = "批量删除考试",
@@ -196,13 +193,11 @@ class ExamController(
         @Valid @RequestBody request: BatchDeleteRequest,
         @CurrentUser user: User
     ): Result<ovo.sypw.onlineexamsystemback.dto.response.BatchDeleteResult> {
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以批量删除考试", 403)
-        }
         val result = examService.batchDelete(request.ids, user.safeId, user.role)
         return Result.success(result, "批量删除完成：成功 ${result.successCount} 条，失败 ${result.failedCount} 条")
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PatchMapping("/{id}")
     @Operation(
         summary = "部分更新考试",
@@ -223,6 +218,7 @@ class ExamController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PostMapping("/{id}/publish")
     @Operation(
         summary = "发布考试",
@@ -233,10 +229,6 @@ class ExamController(
         @CurrentUser user: User,
         @Parameter(description = "考试ID", example = "1") @PathVariable id: Long
     ): Result<ExamResponse> {
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以发布考试", 403)
-        }
-
         return try {
             val exam = examService.publishExam(id, user.safeId, user.role)
             Result.success(exam, "考试发布成功")
@@ -245,6 +237,7 @@ class ExamController(
         }
     }
 
+    @PreAuthorize("hasRole('STUDENT')")
     @PostMapping("/{id}/submissions")
     @Operation(
         summary = "开始考试",
@@ -255,10 +248,6 @@ class ExamController(
         @CurrentUser user: User,
         @Parameter(description = "考试ID", example = "1") @PathVariable id: Long
     ): Result<SubmissionResponse> {
-        if (user.role != "student") {
-            return Result.error("只有学生可以开始考试", 403)
-        }
-
         return try {
             val submission = submissionService.startExam(id, user.safeId)
             Result.success(submission, "考试已开始")
@@ -267,6 +256,7 @@ class ExamController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PostMapping("/{id}/questions")
     @Operation(
         summary = "添加题目到考试",
@@ -292,6 +282,7 @@ class ExamController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @DeleteMapping("/{id}/questions/{questionId}")
     @Operation(
         summary = "从考试移除题目",
@@ -311,6 +302,7 @@ class ExamController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @GetMapping("/{id}/questions")
     @Operation(
         summary = "获取考试的所有题目",
@@ -321,10 +313,6 @@ class ExamController(
         @CurrentUser user: User,
         @Parameter(description = "考试ID", example = "1") @PathVariable id: Long
     ): Result<List<ExamQuestionResponse>> {
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以查看考试题目", 403)
-        }
-
         return try {
             val questions = examService.getExamQuestions(id)
             Result.success(questions)
@@ -333,6 +321,7 @@ class ExamController(
         }
     }
 
+    @PreAuthorize("hasRole('STUDENT')")
     @GetMapping("/my-available")
     @Operation(
         summary = "获取待考考试列表",
@@ -344,15 +333,12 @@ class ExamController(
         @Parameter(description = "页码", example = "0") @RequestParam(defaultValue = "0") page: Int,
         @Parameter(description = "每页条数", example = "20") @RequestParam(defaultValue = "20") size: Int
     ): Result<Page<ExamResponse>> {
-        if (user.role != "student") {
-            return Result.error("只有学生可以查看待考列表", 403)
-        }
-
         val pageable = PageRequest.of(page, size.coerceAtMost(100))
         val exams = examService.getStudentAvailableExams(user.safeId, pageable)
         return Result.success(exams)
     }
 
+    @PreAuthorize("hasRole('STUDENT')")
     @GetMapping("/my-completed")
     @Operation(
         summary = "获取已考/已结束考试列表",
@@ -364,15 +350,12 @@ class ExamController(
         @Parameter(description = "页码", example = "0") @RequestParam(defaultValue = "0") page: Int,
         @Parameter(description = "每页条数", example = "20") @RequestParam(defaultValue = "20") size: Int
     ): Result<Page<ExamResponse>> {
-        if (user.role != "student") {
-            return Result.error("只有学生可以查看已考列表", 403)
-        }
-
         val pageable = PageRequest.of(page, size.coerceAtMost(100))
         val exams = examService.getStudentCompletedExams(user.safeId, pageable)
         return Result.success(exams)
     }
 
+    @PreAuthorize("hasRole('STUDENT')")
     @GetMapping("/{id}/paper")
     @Operation(
         summary = "获取考试试卷（学生）",
@@ -394,10 +377,6 @@ class ExamController(
         @CurrentUser user: User,
         @Parameter(description = "考试ID", example = "1") @PathVariable id: Long
     ): Result<List<ovo.sypw.onlineexamsystemback.dto.response.ExamPaperQuestionResponse>> {
-        if (user.role != "student") {
-            return Result.error("只有学生可以获取考试试卷", 403)
-        }
-
         return try {
             val questions = examService.getExamPaper(id, user.safeId)
             Result.success(questions)
@@ -406,6 +385,7 @@ class ExamController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PostMapping("/{id}/compose-random")
     @Operation(
         summary = "智能随机组卷",
@@ -462,10 +442,6 @@ class ExamController(
         @Parameter(description = "考试ID", example = "1") @PathVariable id: Long,
         @Valid @RequestBody request: ComposeRandomExamRequest
     ): Result<ExamResponse> {
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以组卷", 403)
-        }
-
         return try {
             val exam = examService.composeRandomExam(id, request, user.safeId, user.role)
             Result.success(exam, "组卷成功")

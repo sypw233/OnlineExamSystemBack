@@ -5,6 +5,8 @@ import com.fasterxml.jackson.core.type.TypeReference
 import ovo.sypw.onlineexamsystemback.dto.request.GradeRequest
 import ovo.sypw.onlineexamsystemback.dto.request.ProctoringEventRequest
 import ovo.sypw.onlineexamsystemback.dto.request.SubmissionRequest
+import ovo.sypw.onlineexamsystemback.dto.response.ProctoringDataResponse
+import ovo.sypw.onlineexamsystemback.dto.response.ProctoringEventResponse
 import ovo.sypw.onlineexamsystemback.dto.response.SubmissionResponse
 import ovo.sypw.onlineexamsystemback.entity.ExamSubmission
 import ovo.sypw.onlineexamsystemback.repository.*
@@ -173,6 +175,17 @@ class SubmissionServiceImpl(
         }
     }
 
+    override fun getUserSubmissionByExamId(examId: Long, userId: Long): Page<SubmissionResponse> {
+        val submission = submissionRepository.findByExamIdAndUserId(examId, userId)
+            ?: return org.springframework.data.domain.PageImpl(emptyList())
+        val exam = examRepository.findById(examId).orElseThrow {
+            throw IllegalArgumentException("考试不存在")
+        }
+        val user = userRepository.findById(userId).orElseThrow { throw IllegalArgumentException("用户不存在") }
+        val response = toSubmissionResponse(submission, exam.title, user.realName ?: user.username)
+        return org.springframework.data.domain.PageImpl(listOf(response))
+    }
+
     override fun gradeSubmission(id: Long, request: GradeRequest, userId: Long, userRole: String): SubmissionResponse {
         val submission = submissionRepository.findById(id).orElseThrow {
             throw IllegalArgumentException("提交记录不存在")
@@ -199,20 +212,24 @@ class SubmissionServiceImpl(
             mutableMapOf()
         }
 
-        // Add manual scores
+        // Load exam questions first to get max scores
+        val examQuestions = examQuestionRepository.findByExamIdOrderBySequence(submission.examId)
+        val maxScores = examQuestions.associate { it.questionId.toString() to it.score }
+
+        // Add manual scores with per-question validation
         @Suppress("UNCHECKED_CAST")
         val questionScores = submitDetail.getOrPut("questionScores") { 
             mutableMapOf<String, Int>() 
         } as MutableMap<String, Int>
         request.questionScores.forEach { (qid, score) ->
-            if (score < 0 || score > 1000) {
-                throw IllegalArgumentException("题目 $qid 的分数必须在 0 到 1000 之间")
+            val maxScore = maxScores[qid.toString()] ?: 1000
+            if (score < 0 || score > maxScore) {
+                throw IllegalArgumentException("题目 $qid 的分数必须在 0 到 $maxScore 之间")
             }
             questionScores[qid.toString()] = score
         }
 
         // Calculate objective and subjective scores based on question types
-        val examQuestions = examQuestionRepository.findByExamIdOrderBySequence(submission.examId)
         val questionIds = examQuestions.map { it.questionId }
         val questions = questionRepository.findAllById(questionIds).associateBy { it.id }
 
@@ -256,7 +273,7 @@ class SubmissionServiceImpl(
         return toSubmissionResponse(gradedSubmission, exam.title, user.realName ?: user.username)
     }
 
-    override fun recordProctoringEvent(request: ProctoringEventRequest, userId: Long): Boolean {
+    override fun recordProctoringEvent(request: ProctoringEventRequest, userId: Long): ProctoringEventResponse {
         val examId = request.examId ?: throw IllegalArgumentException("考试ID不能为空")
         
         // Find or create submission for this user and exam
@@ -324,6 +341,7 @@ class SubmissionServiceImpl(
             throw IllegalArgumentException("考试不存在")
         }
 
+        var autoSubmitted = false
         if (exam.strictMode && exam.maxSwitchCount != null) {
             val maxCount = exam.maxSwitchCount!!
             if (submission.switchCount >= maxCount) {
@@ -334,15 +352,19 @@ class SubmissionServiceImpl(
                     proctoringData["autoSubmitted"] = true
                     proctoringData["reason"] = "超出最大切出次数限制"
                     submission.proctoringData = objectMapper.writeValueAsString(proctoringData)
+                    autoSubmitted = true
                 }
             }
         }
 
         submissionRepository.save(submission)
-        return submission.status == 1 // Return true if auto-submitted
+        return ProctoringEventResponse(
+            recorded = true,
+            autoSubmitted = autoSubmitted
+        )
     }
 
-    override fun getProctoringData(submissionId: Long, userId: Long, userRole: String): Map<String, Any> {
+    override fun getProctoringData(submissionId: Long, userId: Long, userRole: String): ProctoringDataResponse {
         val submission = submissionRepository.findById(submissionId).orElseThrow {
             throw IllegalArgumentException("提交记录不存在")
         }
@@ -366,13 +388,13 @@ class SubmissionServiceImpl(
             emptyMap()
         }
 
-        return mapOf(
-            "submissionId" to submissionId,
-            "examId" to submission.examId,
-            "userId" to submission.userId,
-            "switchCount" to submission.switchCount,
-            "proctoringData" to proctoringData,
-            "status" to submission.status
+        return ProctoringDataResponse(
+            submissionId = submissionId,
+            examId = submission.examId,
+            userId = submission.userId,
+            switchCount = submission.switchCount,
+            proctoringData = proctoringData,
+            status = submission.status
         )
     }
 
@@ -496,7 +518,7 @@ class SubmissionServiceImpl(
                     subjectiveScore = detail["subjectiveScore"] as? Int
                 }
             } catch (e: Exception) {
-                // Ignore parsing errors
+                logger.warn("Failed to parse submitDetail JSON for submission ${submission.id}, using entity defaults: ${e.message}")
             }
         }
 

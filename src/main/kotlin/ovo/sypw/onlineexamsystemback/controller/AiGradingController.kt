@@ -16,6 +16,7 @@ import ovo.sypw.onlineexamsystemback.security.CurrentUser
 import ovo.sypw.onlineexamsystemback.service.AiGradingService
 import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.*
 
 @RestController
@@ -25,6 +26,7 @@ class AiGradingController(
     private val aiGradingService: AiGradingService
 ) {
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PostMapping("/grade")
     @Operation(
         summary = "AI辅助判题",
@@ -67,11 +69,6 @@ class AiGradingController(
         )
         @Valid @RequestBody request: AiGradingRequest
     ): Result<AiGradingResponse> {
-        // Only teacher and admin can use AI grading
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以使用AI辅助判题", 403)
-        }
-
         return try {
             val response = aiGradingService.gradeWithAI(request)
             Result.success(response, "AI评分成功")
@@ -84,6 +81,7 @@ class AiGradingController(
         }
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/config")
     @Operation(
         summary = "获取AI配置",
@@ -104,11 +102,6 @@ class AiGradingController(
     fun getAllConfigs(
         @CurrentUser user: User
     ): Result<List<AiConfigResponse>> {
-        // Only admin can view configs
-        if (user.role != "admin") {
-            return Result.error("只有管理员可以查看AI配置", 403)
-        }
-
         return try {
             val configs = aiGradingService.getAllConfigs()
             Result.success(configs)
@@ -117,6 +110,7 @@ class AiGradingController(
         }
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/config")
     @Operation(
         summary = "更新AI配置",
@@ -151,11 +145,6 @@ class AiGradingController(
         )
         @Valid @RequestBody request: AiConfigRequest
     ): Result<AiConfigResponse> {
-        // Only admin can update configs
-        if (user.role != "admin") {
-            return Result.error("只有管理员可以修改AI配置", 403)
-        }
-
         return try {
             val updated = aiGradingService.updateConfig(request, user.safeId)
             Result.success(updated, "配置更新成功")
@@ -166,6 +155,7 @@ class AiGradingController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PostMapping("/grade-submission")
     @Operation(
         summary = "AI批量评分",
@@ -200,10 +190,6 @@ class AiGradingController(
         )
         @Valid @RequestBody request: AiBatchGradingRequest
     ): Result<AiBatchGradingResponse> {
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以使用AI辅助判题", 403)
-        }
-
         return try {
             val response = aiGradingService.gradeSubmissionWithAI(request, user.safeId, user.role)
             Result.success(response, "AI批量评分完成：共评分 ${response.gradedCount} 道主观题")

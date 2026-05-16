@@ -18,6 +18,7 @@ import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.*
 
 @RestController
@@ -130,6 +131,7 @@ class NotificationController(
         return Result.success(mapOf("count" to count), "已全部标记为已读")
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     @Operation(
         summary = "发送自定义通知",
@@ -150,10 +152,6 @@ class NotificationController(
         @Valid @RequestBody request: CreateNotificationRequest,
         @CurrentUser user: User
     ): Result<String> {
-        if (user.role != "admin") {
-            return Result.error("只有管理员可以发送自定义通知", 403)
-        }
-
         if (request.userIds.isNullOrEmpty() && request.courseId == null) {
             return Result.error("请提供 userIds 或 courseId", 400)
         }

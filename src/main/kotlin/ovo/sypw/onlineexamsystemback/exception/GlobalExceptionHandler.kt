@@ -7,6 +7,7 @@ import ovo.sypw.onlineexamsystemback.util.Result
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.converter.HttpMessageNotReadableException
+import org.springframework.security.access.AccessDeniedException
 import org.springframework.security.authentication.BadCredentialsException
 import org.springframework.security.core.userdetails.UsernameNotFoundException
 import org.springframework.web.bind.MethodArgumentNotValidException
@@ -29,6 +30,12 @@ class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     fun handleUsernameNotFound(ex: UsernameNotFoundException): Result<Nothing> {
         return Result.error("用户不存在", 401)
+    }
+
+    @ExceptionHandler(AccessDeniedException::class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    fun handleAccessDenied(ex: AccessDeniedException): Result<Nothing> {
+        return Result.error("权限不足", 403)
     }
 
     @ExceptionHandler(MethodArgumentNotValidException::class)

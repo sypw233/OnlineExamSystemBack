@@ -14,6 +14,9 @@ interface QuestionBankService {
     fun getQuestionBankById(id: Long): QuestionBankResponse
     fun getAllQuestionBanks(pageable: Pageable): Page<QuestionBankResponse>
     fun getMyQuestionBanks(userId: Long, pageable: Pageable): Page<QuestionBankResponse>
+
+    // Search question banks with filters
+    fun searchQuestionBanks(keyword: String?, creatorId: Long?, pageable: Pageable): Page<QuestionBankResponse>
     
     // Question-Bank association
     fun addQuestionToBank(bankId: Long, questionId: Long, userId: Long, userRole: String)

@@ -9,10 +9,12 @@ import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource
 import org.springframework.stereotype.Component
 import org.springframework.web.filter.OncePerRequestFilter
+import ovo.sypw.onlineexamsystemback.repository.UserRepository
 
 @Component
 class JwtAuthenticationFilter(
-    private val jwtTokenProvider: JwtTokenProvider
+    private val jwtTokenProvider: JwtTokenProvider,
+    private val userRepository: UserRepository
 ) : OncePerRequestFilter() {
 
     private val publicPaths = listOf(
@@ -43,7 +45,17 @@ class JwtAuthenticationFilter(
 
             if (token != null && jwtTokenProvider.validateToken(token)) {
                 val username = jwtTokenProvider.getUsernameFromToken(token)
-                val role = jwtTokenProvider.getRoleFromToken(token)
+
+                // Validate user against database to prevent stale role claims
+                val user = userRepository.findByUsername(username)
+                if (user == null || user.status == 0) {
+                    // User doesn't exist or is disabled — skip setting authentication
+                    filterChain.doFilter(request, response)
+                    return
+                }
+
+                // Use the database role instead of the token role
+                val role = user.role
 
                 val authorities = listOf(SimpleGrantedAuthority("ROLE_${role.uppercase()}"))
                 val authentication = UsernamePasswordAuthenticationToken(

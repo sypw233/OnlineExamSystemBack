@@ -220,6 +220,28 @@ class ExamServiceImpl(
         }
     }
 
+    override fun getExamsByCourse(courseId: Long, status: Int?, pageable: Pageable): Page<ExamResponse> {
+        val course = courseRepository.findById(courseId).orElseThrow {
+            throw IllegalArgumentException("课程不存在")
+        }
+
+        val examPage = if (status != null) {
+            examRepository.findByCourseIdAndStatus(courseId, status, pageable)
+        } else {
+            examRepository.findByCourseId(courseId, pageable)
+        }
+        val creatorIds = examPage.content.map { it.creatorId }.toSet()
+        val creators = userRepository.findAllById(creatorIds).associateBy { it.id }
+        val examIds = examPage.content.mapNotNull { it.id }
+        val questionCounts = examQuestionRepository.countByExamIdIn(examIds)
+            .associate { (it[0] as Number).toLong() to (it[1] as Number).toLong() }
+
+        return examPage.map { exam ->
+            val creator = creators[exam.creatorId] ?: throw IllegalArgumentException("创建者不存在")
+            toExamResponse(exam, course.courseName, creator.realName ?: creator.username, questionCounts[exam.id] ?: 0)
+        }
+    }
+
     override fun getMyExams(userId: Long): List<ExamResponse> {
         val exams = examRepository.findByCreatorId(userId)
         val courseIds = exams.map { it.courseId }.toSet()
@@ -237,11 +259,15 @@ class ExamServiceImpl(
         }
     }
 
-    override fun getMyTeachingExams(teacherId: Long, pageable: Pageable): Page<ExamResponse> {
+    override fun getMyTeachingExams(teacherId: Long, status: Int?, pageable: Pageable): Page<ExamResponse> {
         val courseIds = courseRepository.findByTeacherId(teacherId).map { it.id ?: 0L }
         if (courseIds.isEmpty()) return Page.empty(pageable)
 
-        val examPage = examRepository.findByCourseIdIn(courseIds, pageable)
+        val examPage = if (status != null) {
+            examRepository.findByCourseIdInAndStatus(courseIds, status, pageable)
+        } else {
+            examRepository.findByCourseIdIn(courseIds, pageable)
+        }
         val allCourseIds = examPage.content.map { it.courseId }.toSet()
         val creatorIds = examPage.content.map { it.creatorId }.toSet()
         val courses = courseRepository.findAllById(allCourseIds).associateBy { it.id }

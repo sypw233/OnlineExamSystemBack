@@ -13,6 +13,7 @@ import ovo.sypw.onlineexamsystemback.service.FileService
 import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.http.MediaType
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.multipart.MultipartFile
 
@@ -23,6 +24,7 @@ class FileController(
     private val fileService: FileService
 ) {
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PostMapping("/image", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     @Operation(
         summary = "上传图片",
@@ -69,11 +71,6 @@ class FileController(
         )
         @RequestParam(defaultValue = "temp") category: String
     ): Result<FileUploadResponse> {
-        // Only teacher and admin can upload
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以上传文件", 403)
-        }
-
         return try {
             val response = fileService.uploadImage(file, category, user.safeId)
             Result.success(response, "图片上传成功")
@@ -82,6 +79,7 @@ class FileController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PostMapping("/document", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     @Operation(
         summary = "上传文档",
@@ -128,11 +126,6 @@ class FileController(
         )
         @RequestParam(defaultValue = "temp") category: String
     ): Result<FileUploadResponse> {
-        // Only teacher and admin can upload
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以上传文件", 403)
-        }
-
         return try {
             val response = fileService.uploadDocument(file, category, user.safeId)
             Result.success(response, "文档上传成功")
@@ -141,6 +134,7 @@ class FileController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @DeleteMapping("/{*fileKey}")
     @Operation(
         summary = "删除文件",
@@ -165,11 +159,6 @@ class FileController(
         )
         @PathVariable fileKey: String
     ): Result<String> {
-        // Only teacher and admin can delete
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以删除文件", 403)
-        }
-
         return try {
             fileService.deleteFile(fileKey, user.safeId, user.role)
             Result.success("删除成功")

@@ -14,6 +14,12 @@ class RequestLoggingFilter : OncePerRequestFilter() {
 
     private val log = LoggerFactory.getLogger(RequestLoggingFilter::class.java)
 
+    private val sensitivePathPrefixes = listOf("/api/auth/")
+    private val sensitiveFieldPattern = Regex(
+        """("(?:password|token|secret|accessToken|refreshToken|oldPassword|newPassword)"\s*:\s*")([^"]*?)"""",
+        RegexOption.IGNORE_CASE
+    )
+
     override fun doFilterInternal(
         request: HttpServletRequest,
         response: HttpServletResponse,
@@ -23,8 +29,10 @@ class RequestLoggingFilter : OncePerRequestFilter() {
         val wrappedResponse = ContentCachingResponseWrapper(response)
 
         val startTime = System.currentTimeMillis()
+        val uri = request.requestURI
+        val isSensitivePath = sensitivePathPrefixes.any { uri.startsWith(it) }
 
-        log.info("[REQUEST] {} {}", request.method, request.requestURI)
+        log.info("[REQUEST] {} {}", request.method, uri)
         request.queryString?.let {
             log.info("[REQUEST PARAMS] {}", it)
         }
@@ -33,18 +41,27 @@ class RequestLoggingFilter : OncePerRequestFilter() {
 
         val duration = System.currentTimeMillis() - startTime
 
-        val requestBody = String(wrappedRequest.contentAsByteArray, Charsets.UTF_8)
-        if (requestBody.isNotBlank()) {
-            log.info("[REQUEST BODY] {}", requestBody)
+        if (!isSensitivePath) {
+            val requestBody = String(wrappedRequest.contentAsByteArray, Charsets.UTF_8)
+            if (requestBody.isNotBlank()) {
+                log.info("[REQUEST BODY] {}", requestBody)
+            }
         }
 
         val responseBody = String(wrappedResponse.contentAsByteArray, Charsets.UTF_8)
         if (responseBody.isNotBlank()) {
-            log.info("[RESPONSE BODY] {}", responseBody)
+            val redacted = redactSensitiveFields(responseBody)
+            log.info("[RESPONSE BODY] {}", redacted)
         }
 
-        log.info("[RESPONSE] {} {} - {}ms", request.method, request.requestURI, duration)
+        log.info("[RESPONSE] {} {} - {}ms", request.method, uri, duration)
 
         wrappedResponse.copyBodyToResponse()
+    }
+
+    private fun redactSensitiveFields(body: String): String {
+        return sensitiveFieldPattern.replace(body) { matchResult ->
+            "${matchResult.groupValues[1]}******\""
+        }
     }
 }

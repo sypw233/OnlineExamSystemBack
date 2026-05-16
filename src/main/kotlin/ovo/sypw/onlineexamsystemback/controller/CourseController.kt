@@ -11,12 +11,14 @@ import ovo.sypw.onlineexamsystemback.dto.response.EnrollmentResponse
 import ovo.sypw.onlineexamsystemback.dto.response.ExamResponse
 import ovo.sypw.onlineexamsystemback.entity.User
 import ovo.sypw.onlineexamsystemback.security.CurrentUser
+import ovo.sypw.onlineexamsystemback.repository.CourseSelectionRepository
 import ovo.sypw.onlineexamsystemback.service.CourseService
 import ovo.sypw.onlineexamsystemback.service.ExamService
 import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.*
 
 @RestController
@@ -24,9 +26,11 @@ import org.springframework.web.bind.annotation.*
 @Tag(name = "课程管理", description = "课程相关接口")
 class CourseController(
     private val courseService: CourseService,
-    private val examService: ExamService
+    private val examService: ExamService,
+    private val courseSelectionRepository: CourseSelectionRepository
 ) {
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PostMapping
     @Operation(
         summary = "创建课程",
@@ -37,26 +41,33 @@ class CourseController(
         @Valid @RequestBody courseRequest: CourseRequest,
         @CurrentUser user: User
     ): Result<CourseResponse> {
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以创建课程", 403)
-        }
-
         val course = courseService.createCourse(courseRequest, user.safeId)
         return Result.success(course, "课程创建成功")
     }
 
     @GetMapping
     @Operation(
-        summary = "获取所有活跃课程",
-        description = "获取所有状态为活跃的课程列表，支持分页",
+        summary = "查询课程列表",
+        description = "管理员可查询所有课程并按关键字、状态、教师筛选；教师和学生仅查看活跃课程",
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun getAllActiveCourses(
         @Parameter(description = "页码", example = "0") @RequestParam(defaultValue = "0") page: Int,
         @Parameter(description = "每页条数", example = "20") @RequestParam(defaultValue = "20") size: Int,
+        @Parameter(description = "关键字搜索(匹配课程名称、描述)") @RequestParam(required = false) keyword: String?,
+        @Parameter(description = "状态过滤: 1-活跃, 0-停用") @RequestParam(required = false) status: Int?,
+        @Parameter(description = "教师ID过滤") @RequestParam(required = false) teacherId: Long?,
         @CurrentUser user: User
     ): Result<Page<CourseResponse>> {
         val pageable = PageRequest.of(page, size.coerceAtMost(100))
+
+        // Admin can use all filters
+        if (user.role == "admin") {
+            val courses = courseService.searchCourses(keyword, status, teacherId, pageable)
+            return Result.success(courses)
+        }
+
+        // Teacher/Student: only active courses, ignore other filters
         val courses = courseService.getAllActiveCourses(pageable)
         return Result.success(courses)
     }
@@ -92,9 +103,9 @@ class CourseController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PutMapping("/{id}")
     @Operation(
-        summary = "更新课程",
         description = "教师更新自己的课程，管理员可更新任何课程",
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
@@ -111,6 +122,7 @@ class CourseController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @DeleteMapping("/{id}")
     @Operation(
         summary = "删除课程",
@@ -129,6 +141,7 @@ class CourseController(
         }
     }
 
+    @PreAuthorize("hasRole('STUDENT')")
     @PostMapping("/{id}/enroll")
     @Operation(
         summary = "选课",
@@ -139,10 +152,6 @@ class CourseController(
         @Parameter(description = "课程ID") @PathVariable id: Long,
         @CurrentUser user: User
     ): Result<EnrollmentResponse> {
-        if (user.role != "student") {
-            return Result.error("只有学生可以选课", 403)
-        }
-
         return try {
             val enrollment = courseService.enrollStudent(id, user.safeId)
             Result.success(enrollment, "选课成功")
@@ -151,6 +160,7 @@ class CourseController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @GetMapping("/{id}/students")
     @Operation(
         summary = "获取选课学生列表",
@@ -161,10 +171,6 @@ class CourseController(
         @Parameter(description = "课程ID") @PathVariable id: Long,
         @CurrentUser user: User
     ): Result<List<EnrollmentResponse>> {
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以查看选课情况", 403)
-        }
-
         return try {
             val enrollments = courseService.getEnrolledStudents(id, user.safeId, user.role)
             Result.success(enrollments)
@@ -173,6 +179,7 @@ class CourseController(
         }
     }
 
+    @PreAuthorize("hasRole('STUDENT')")
     @GetMapping("/my-enrollments")
     @Operation(
         summary = "获取我的选课记录",
@@ -182,14 +189,11 @@ class CourseController(
     fun getMyEnrollments(
         @CurrentUser user: User
     ): Result<List<EnrollmentResponse>> {
-        if (user.role != "student") {
-            return Result.error("只有学生可以查看选课记录", 403)
-        }
-
         val enrollments = courseService.getMyEnrollments(user.safeId)
         return Result.success(enrollments)
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PostMapping("/{id}/students/{studentId}")
     @Operation(
         summary = "添加学生到课程",
@@ -201,10 +205,6 @@ class CourseController(
         @Parameter(description = "学生ID") @PathVariable studentId: Long,
         @CurrentUser user: User
     ): Result<EnrollmentResponse> {
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以添加学生", 403)
-        }
-
         return try {
             val enrollment = courseService.addStudentToCourse(id, studentId, user.safeId, user.role)
             Result.success(enrollment, "学生添加成功")
@@ -213,6 +213,7 @@ class CourseController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PostMapping("/{id}/students")
     @Operation(
         summary = "批量添加学生到课程",
@@ -224,10 +225,6 @@ class CourseController(
         @RequestBody studentIds: List<Long>,
         @CurrentUser user: User
     ): Result<List<EnrollmentResponse>> {
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以添加学生", 403)
-        }
-
         if (studentIds.isEmpty()) {
             return Result.error("学生ID列表不能为空", 400)
         }
@@ -273,7 +270,7 @@ class CourseController(
     @GetMapping("/{id}/exams")
     @Operation(
         summary = "获取课程下的考试列表",
-        description = "获取指定课程下的所有考试，支持分页",
+        description = "获取指定课程下的所有考试，支持分页。学生只能查看已发布考试且需已选课，教师只能查看自己课程的考试，管理员可查看所有",
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun getCourseExams(
@@ -284,8 +281,34 @@ class CourseController(
     ): Result<Page<ExamResponse>> {
         val pageable = PageRequest.of(page, size.coerceAtMost(100))
         return try {
-            val exams = examService.getExamsByCourse(id, pageable)
-            Result.success(exams)
+            // Verify course exists
+            val course = courseService.getCourseById(id)
+
+            when (user.role) {
+                "student" -> {
+                    // Check enrollment
+                    val isEnrolled = courseSelectionRepository.existsByStudentIdAndCourseId(user.safeId, id)
+                    if (!isEnrolled) {
+                        return Result.error("您未选修该课程，无法查看考试列表", 403)
+                    }
+                    // Students can only see published exams (status=1)
+                    val exams = examService.getExamsByCourse(id, 1, pageable)
+                    Result.success(exams)
+                }
+                "teacher" -> {
+                    // Check course ownership
+                    if (course.teacherId != user.safeId) {
+                        return Result.error("您没有权限查看此课程的考试", 403)
+                    }
+                    val exams = examService.getExamsByCourse(id, pageable)
+                    Result.success(exams)
+                }
+                else -> {
+                    // Admin: full access
+                    val exams = examService.getExamsByCourse(id, pageable)
+                    Result.success(exams)
+                }
+            }
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "查询失败", 400)
         }

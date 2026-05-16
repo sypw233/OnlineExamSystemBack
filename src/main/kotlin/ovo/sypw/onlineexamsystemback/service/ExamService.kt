@@ -20,8 +20,9 @@ interface ExamService {
     fun getAllExams(pageable: Pageable): Page<ExamResponse>
     fun getExamsByStatus(status: Int, pageable: Pageable): Page<ExamResponse>
     fun getExamsByCourse(courseId: Long, pageable: Pageable): Page<ExamResponse>
+    fun getExamsByCourse(courseId: Long, status: Int?, pageable: Pageable): Page<ExamResponse>
     fun getMyExams(userId: Long): List<ExamResponse>
-    fun getMyTeachingExams(teacherId: Long, pageable: Pageable): Page<ExamResponse>
+    fun getMyTeachingExams(teacherId: Long, status: Int?, pageable: Pageable): Page<ExamResponse>
 
     // Unified search
     fun searchExams(

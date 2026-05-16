@@ -8,6 +8,8 @@ import ovo.sypw.onlineexamsystemback.repository.*
 import ovo.sypw.onlineexamsystemback.service.StatisticsService
 import org.apache.poi.ss.usermodel.Workbook
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.io.ByteArrayOutputStream
@@ -22,12 +24,11 @@ class StatisticsServiceImpl(
     private val questionRepository: QuestionRepository,
     private val userRepository: UserRepository,
     private val courseRepository: CourseRepository,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    @Value("\${statistics.passing-score:60}") private val passingScore: Int
 ) : StatisticsService {
 
-    companion object {
-        private const val PASSING_SCORE = 60  // 及格分数线
-    }
+    private val logger = LoggerFactory.getLogger(StatisticsServiceImpl::class.java)
 
     override fun getExamStatistics(examId: Long): ExamStatisticsResponse {
         // Validate exam exists
@@ -54,7 +55,7 @@ class StatisticsServiceImpl(
         val highestScore = scores.maxOrNull()
         val lowestScore = scores.minOrNull()
 
-        val passCount = scores.count { it >= PASSING_SCORE }
+        val passCount = scores.count { it >= passingScore }
         val passRate = if (scores.isNotEmpty()) {
             round(passCount.toDouble() / scores.size * 100 * 10) / 10
         } else 0.0
@@ -183,7 +184,7 @@ class StatisticsServiceImpl(
                         }
                     }
                 } catch (e: Exception) {
-                    // Skip invalid answer data
+                    logger.warn("Skipping invalid answer data for statistics calculation: ${e.message}")
                 }
             }
         }
@@ -225,9 +226,11 @@ class StatisticsServiceImpl(
         val highestScore = scores.maxOrNull()
         val lowestScore = scores.minOrNull()
 
-        // Get score records
+        // Get score records (batch query to avoid N+1)
+        val examIds = submissions.map { it.examId }.distinct()
+        val examsById = examRepository.findAllById(examIds).associateBy { it.id }
         val scoreRecords = submissions.mapNotNull { submission ->
-            val exam = examRepository.findById(submission.examId).orElse(null)
+            val exam = examsById[submission.examId]
             if (exam != null) {
                 StudentScoreRecord(
                     examId = submission.examId,
@@ -252,10 +255,10 @@ class StatisticsServiceImpl(
     }
 
     override fun getSystemOverview(): SystemOverviewResponse {
-        val allUsers = userRepository.findAll()
-        val studentCount = allUsers.count { it.role == "student" }
-        val teacherCount = allUsers.count { it.role == "teacher" }
-        val adminCount = allUsers.count { it.role == "admin" }
+        val studentCount = userRepository.countByRole("student")
+        val teacherCount = userRepository.countByRole("teacher")
+        val adminCount = userRepository.countByRole("admin")
+        val totalUsers = studentCount + teacherCount + adminCount
 
         val totalCourses = courseRepository.count().toInt()
         val totalExams = examRepository.count().toInt()
@@ -263,10 +266,10 @@ class StatisticsServiceImpl(
         val totalSubmissions = submissionRepository.count().toInt()
 
         return SystemOverviewResponse(
-            totalUsers = allUsers.size,
-            studentCount = studentCount,
-            teacherCount = teacherCount,
-            adminCount = adminCount,
+            totalUsers = totalUsers.toInt(),
+            studentCount = studentCount.toInt(),
+            teacherCount = teacherCount.toInt(),
+            adminCount = adminCount.toInt(),
             totalCourses = totalCourses,
             totalExams = totalExams,
             totalQuestions = totalQuestions,

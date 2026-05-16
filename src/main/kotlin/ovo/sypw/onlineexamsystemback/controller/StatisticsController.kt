@@ -8,6 +8,7 @@ import jakarta.validation.Valid
 import ovo.sypw.onlineexamsystemback.dto.request.ExamScoreExportRequest
 import ovo.sypw.onlineexamsystemback.dto.response.*
 import ovo.sypw.onlineexamsystemback.entity.User
+import ovo.sypw.onlineexamsystemback.repository.CourseRepository
 import ovo.sypw.onlineexamsystemback.repository.ExamRepository
 import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.security.CurrentUser
@@ -17,6 +18,7 @@ import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.*
 
 @RestController
@@ -25,9 +27,11 @@ import org.springframework.web.bind.annotation.*
 class StatisticsController(
     private val statisticsService: StatisticsService,
     private val userRepository: UserRepository,
-    private val examRepository: ExamRepository
+    private val examRepository: ExamRepository,
+    private val courseRepository: CourseRepository
 ) {
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @GetMapping("/exam/{examId}")
     @Operation(
         summary = "考试统计",
@@ -51,7 +55,7 @@ class StatisticsController(
         @PathVariable examId: Long,
         @CurrentUser user: User
     ): Result<ExamStatisticsResponse> {
-        // Check permission
+        // Ownership check: teacher can only view their own exam statistics
         if (user.role == "teacher") {
             val exam = examRepository.findById(examId).orElse(null)
                 ?: return Result.error("考试不存在", 404)
@@ -59,8 +63,6 @@ class StatisticsController(
             if (exam.creatorId != user.id) {
                 return Result.error("您没有权限查看此考试的统计数据", 403)
             }
-        } else if (user.role != "admin") {
-            return Result.error("只有教师和管理员可以查看统计数据", 403)
         }
 
         return try {
@@ -71,6 +73,7 @@ class StatisticsController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @GetMapping("/course/{courseId}")
     @Operation(
         summary = "课程统计",
@@ -94,9 +97,13 @@ class StatisticsController(
         @PathVariable courseId: Long,
         @CurrentUser user: User
     ): Result<CourseStatisticsResponse> {
-        // Only teacher and admin can view
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以查看统计数据", 403)
+        // Ownership check: teacher can only view their own course statistics
+        if (user.role == "teacher") {
+            val course = courseRepository.findById(courseId).orElse(null)
+                ?: return Result.error("课程不存在", 404)
+            if (course.teacherId != user.id) {
+                return Result.error("您没有权限查看此课程的统计数据", 403)
+            }
         }
 
         return try {
@@ -107,6 +114,7 @@ class StatisticsController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @GetMapping("/question/{questionId}")
     @Operation(
         summary = "题目统计",
@@ -129,11 +137,6 @@ class StatisticsController(
         @PathVariable questionId: Long,
         @CurrentUser user: User
     ): Result<QuestionStatisticsResponse> {
-        // Only teacher and admin can view
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以查看统计数据", 403)
-        }
-
         return try {
             val statistics = statisticsService.getQuestionStatistics(questionId)
             Result.success(statistics)
@@ -178,6 +181,7 @@ class StatisticsController(
         }
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/overview")
     @Operation(
         summary = "系统总览",
@@ -199,11 +203,6 @@ class StatisticsController(
     fun getSystemOverview(
         @CurrentUser user: User
     ): Result<SystemOverviewResponse> {
-        // Only admin can view system overview
-        if (user.role != "admin") {
-            return Result.error("只有管理员可以查看系统总览", 403)
-        }
-
         return try {
             val overview = statisticsService.getSystemOverview()
             Result.success(overview)
@@ -212,6 +211,7 @@ class StatisticsController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PostMapping("/exam/{examId}/export")
     @Operation(
         summary = "导出考试成绩",

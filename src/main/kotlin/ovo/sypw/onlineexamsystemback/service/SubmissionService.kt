@@ -3,6 +3,8 @@ package ovo.sypw.onlineexamsystemback.service
 import ovo.sypw.onlineexamsystemback.dto.request.GradeRequest
 import ovo.sypw.onlineexamsystemback.dto.request.ProctoringEventRequest
 import ovo.sypw.onlineexamsystemback.dto.request.SubmissionRequest
+import ovo.sypw.onlineexamsystemback.dto.response.ProctoringDataResponse
+import ovo.sypw.onlineexamsystemback.dto.response.ProctoringEventResponse
 import ovo.sypw.onlineexamsystemback.dto.response.SubmissionResponse
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -23,12 +25,15 @@ interface SubmissionService {
     // Get user's all submissions (paginated)
     fun getUserSubmissions(userId: Long, pageable: Pageable): Page<SubmissionResponse>
 
+    // Get user's submission for a specific exam (returns single submission as a page)
+    fun getUserSubmissionByExamId(examId: Long, userId: Long): Page<SubmissionResponse>
+
     // Manual grading for subjective questions
     fun gradeSubmission(id: Long, request: GradeRequest, userId: Long, userRole: String): SubmissionResponse
 
     // Record proctoring event
-    fun recordProctoringEvent(request: ProctoringEventRequest, userId: Long): Boolean
+    fun recordProctoringEvent(request: ProctoringEventRequest, userId: Long): ProctoringEventResponse
 
     // Get proctoring data for a submission
-    fun getProctoringData(submissionId: Long, userId: Long, userRole: String): Map<String, Any>
+    fun getProctoringData(submissionId: Long, userId: Long, userRole: String): ProctoringDataResponse
 }

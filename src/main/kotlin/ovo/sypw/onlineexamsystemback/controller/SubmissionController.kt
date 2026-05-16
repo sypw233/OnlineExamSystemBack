@@ -9,6 +9,8 @@ import io.swagger.v3.oas.annotations.media.Schema
 import ovo.sypw.onlineexamsystemback.dto.request.GradeRequest
 import ovo.sypw.onlineexamsystemback.dto.request.ProctoringEventRequest
 import ovo.sypw.onlineexamsystemback.dto.request.SubmissionRequest
+import ovo.sypw.onlineexamsystemback.dto.response.ProctoringDataResponse
+import ovo.sypw.onlineexamsystemback.dto.response.ProctoringEventResponse
 import ovo.sypw.onlineexamsystemback.dto.response.SubmissionResponse
 import ovo.sypw.onlineexamsystemback.entity.User
 import ovo.sypw.onlineexamsystemback.security.CurrentUser
@@ -17,6 +19,7 @@ import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.*
 
 @RestController
@@ -116,12 +119,8 @@ class SubmissionController(
         // Student can only view their own
         if (user.role == "student") {
             if (examId != null) {
-                // Check if student has a submission for this exam
                 return try {
-                    val submission = submissionService.getUserSubmissions(user.safeId, pageable)
-                        .content.firstOrNull { it.examId == examId }
-                        ?.let { org.springframework.data.domain.PageImpl(listOf(it), pageable, 1) }
-                        ?: org.springframework.data.domain.PageImpl(emptyList<SubmissionResponse>(), pageable, 0)
+                    val submission = submissionService.getUserSubmissionByExamId(examId, user.safeId)
                     Result.success(submission)
                 } catch (e: IllegalArgumentException) {
                     Result.error(e.message ?: "查询失败", 400)
@@ -157,6 +156,7 @@ class SubmissionController(
         return Result.error("请提供 examId 或 userId 参数", 400)
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PostMapping("/{id}/grade")
     @Operation(
         summary = "主观题手动评分",
@@ -172,10 +172,6 @@ class SubmissionController(
         @Parameter(description = "提交ID", example = "1") @PathVariable id: Long,
         @Valid @RequestBody request: GradeRequest
     ): Result<SubmissionResponse> {
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以评分", 403)
-        }
-
         return try {
             val submission = submissionService.gradeSubmission(id, request, user.safeId, user.role)
             Result.success(submission, "评分成功")
@@ -222,15 +218,12 @@ class SubmissionController(
             required = true
         )
         @Valid @RequestBody request: ProctoringEventRequest
-    ): Result<Map<String, Any>> {
+    ): Result<ProctoringEventResponse> {
         return try {
-            val autoSubmitted = submissionService.recordProctoringEvent(request, user.safeId)
+            val response = submissionService.recordProctoringEvent(request, user.safeId)
             Result.success(
-                mapOf(
-                    "recorded" to true,
-                    "autoSubmitted" to autoSubmitted
-                ),
-                if (autoSubmitted) "已超出最大切出次数，考试已自动提交" else "事件已记录"
+                response,
+                if (response.autoSubmitted) "已超出最大切出次数，考试已自动提交" else "事件已记录"
             )
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "记录失败", 400)
@@ -258,7 +251,7 @@ class SubmissionController(
     fun getProctoringData(
         @CurrentUser user: User,
         @Parameter(description = "提交ID", example = "1") @PathVariable id: Long
-    ): Result<Map<String, Any>> {
+    ): Result<ProctoringDataResponse> {
         return try {
             val data = submissionService.getProctoringData(id, user.safeId, user.role)
             Result.success(data)

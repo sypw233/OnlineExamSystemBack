@@ -15,6 +15,7 @@ import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.*
 
 @RestController
@@ -24,6 +25,7 @@ class QuestionBankController(
     private val questionBankService: QuestionBankService
 ) {
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PostMapping
     @Operation(
         summary = "创建题库",
@@ -34,10 +36,6 @@ class QuestionBankController(
         @Valid @RequestBody request: QuestionBankRequest,
         @CurrentUser user: User
     ): Result<QuestionBankResponse> {
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以创建题库", 403)
-        }
-
         return try {
             val questionBank = questionBankService.createQuestionBank(request, user.safeId)
             Result.success(questionBank, "题库创建成功")
@@ -48,19 +46,22 @@ class QuestionBankController(
 
     @GetMapping
     @Operation(
-        summary = "获取所有题库",
-        description = "管理员获取全部题库，教师仅获取自己创建的题库，支持分页",
+        summary = "查询题库列表",
+        description = "管理员可查询所有题库并按关键字、创建者筛选；教师仅查看自己创建的题库",
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
     fun getAllQuestionBanks(
         @Parameter(description = "页码", example = "0") @RequestParam(defaultValue = "0") page: Int,
         @Parameter(description = "每页条数", example = "20") @RequestParam(defaultValue = "20") size: Int,
+        @Parameter(description = "关键字搜索(匹配题库名称、描述)") @RequestParam(required = false) keyword: String?,
         @CurrentUser user: User
     ): Result<Page<QuestionBankResponse>> {
         val pageable = PageRequest.of(page, size.coerceAtMost(100))
         val questionBanks = if (user.role == "admin") {
-            questionBankService.getAllQuestionBanks(pageable)
+            // Admin can search all banks with keyword filter
+            questionBankService.searchQuestionBanks(keyword, null, pageable)
         } else {
+            // Teacher: only their own banks
             questionBankService.getMyQuestionBanks(user.safeId, pageable)
         }
         return Result.success(questionBanks)
@@ -85,9 +86,9 @@ class QuestionBankController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PutMapping("/{id}")
     @Operation(
-        summary = "更新题库",
         description = "教师更新自己的题库，管理员可更新任何题库",
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
@@ -104,9 +105,9 @@ class QuestionBankController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @DeleteMapping("/{id}")
     @Operation(
-        summary = "删除题库",
         description = "教师删除自己的题库，管理员可删除任何题库",
         security = [SecurityRequirement(name = "Bearer Authentication")]
     )
@@ -124,6 +125,7 @@ class QuestionBankController(
 
 
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PostMapping("/{id}/questions/{questionId}")
     @Operation(
         summary = "添加题目到题库",
@@ -150,6 +152,7 @@ class QuestionBankController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @DeleteMapping("/{id}/questions/{questionId}")
     @Operation(
         summary = "从题库移除题目",
@@ -169,6 +172,7 @@ class QuestionBankController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @GetMapping("/{id}/questions")
     @Operation(
         summary = "获取题库中的所有题目",
@@ -187,10 +191,6 @@ class QuestionBankController(
         @Parameter(description = "题库ID", example = "1") @PathVariable id: Long,
         @CurrentUser user: User
     ): Result<List<QuestionResponse>> {
-        if (user.role == "student") {
-            return Result.error("学生无权查看题库题目", 403)
-        }
-
         return try {
             val questions = questionBankService.getQuestionsInBank(id)
             Result.success(questions)

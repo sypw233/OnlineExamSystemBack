@@ -13,6 +13,7 @@ import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.multipart.MultipartFile
 
@@ -23,6 +24,7 @@ class QuestionImportExportController(
     private val questionImportExportService: QuestionImportExportService
 ) {
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PostMapping("/import")
     @Operation(
         summary = "导入题目",
@@ -60,10 +62,6 @@ class QuestionImportExportController(
         @Parameter(description = "题库ID", example = "1", required = true)
         @RequestParam("bankId") bankId: Long
     ): Result<ImportResultResponse> {
-        if (user.role != "teacher" && user.role != "admin") {
-            return Result.error("只有教师和管理员可以导入题目", 403)
-        }
-
         if (file.isEmpty) {
             return Result.error("文件不能为空", 400)
         }
@@ -86,6 +84,7 @@ class QuestionImportExportController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @GetMapping("/export")
     @Operation(
         summary = "导出题库",
@@ -107,11 +106,6 @@ class QuestionImportExportController(
         @Parameter(description = "题库ID", example = "1", required = true)
         @RequestParam("bankId") bankId: Long
     ): ResponseEntity<ByteArray> {
-        if (user.role != "teacher" && user.role != "admin") {
-            return ResponseEntity.status(403)
-                .body("只有教师和管理员可以导出题库".toByteArray())
-        }
-
         return try {
             val (bytes, filename) = questionImportExportService.exportQuestionsToExcel(bankId, user.safeId)
             val headers = HttpHeaders().apply {
@@ -128,6 +122,7 @@ class QuestionImportExportController(
         }
     }
 
+    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @GetMapping("/template")
     @Operation(
         summary = "下载导入模板",
@@ -147,11 +142,6 @@ class QuestionImportExportController(
     fun downloadTemplate(
         @CurrentUser user: User
     ): ResponseEntity<ByteArray> {
-        if (user.role != "teacher" && user.role != "admin") {
-            return ResponseEntity.status(403)
-                .body("只有教师和管理员可以下载模板".toByteArray())
-        }
-
         return try {
             val (bytes, filename) = questionImportExportService.downloadImportTemplate(user.safeId)
             val headers = HttpHeaders().apply {

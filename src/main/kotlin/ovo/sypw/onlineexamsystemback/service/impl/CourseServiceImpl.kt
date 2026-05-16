@@ -130,6 +130,19 @@ class CourseServiceImpl(
         }
     }
 
+    override fun searchCourses(keyword: String?, status: Int?, teacherId: Long?, pageable: Pageable): Page<CourseResponse> {
+        val coursePage = courseRepository.searchCourses(keyword, status, teacherId, pageable)
+        val teacherIds = coursePage.content.map { it.teacherId }.toSet()
+        val teachers = userRepository.findAllById(teacherIds).associateBy { it.id }
+        val courseIds = coursePage.content.mapNotNull { it.id }
+        val enrollmentCounts = batchFetchEnrollmentCounts(courseIds)
+
+        return coursePage.map { course ->
+            val teacher = teachers[course.teacherId] ?: throw IllegalArgumentException("教师不存在")
+            toCourseResponse(course, teacher.realName ?: teacher.username, enrollmentCounts[course.id] ?: 0)
+        }
+    }
+
     override fun enrollStudent(courseId: Long, studentId: Long): EnrollmentResponse {
         // Check if student exists
         val student = userRepository.findById(studentId).orElseThrow {

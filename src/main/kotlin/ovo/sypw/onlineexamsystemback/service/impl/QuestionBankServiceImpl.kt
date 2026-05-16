@@ -126,6 +126,19 @@ class QuestionBankServiceImpl(
         }
     }
 
+    override fun searchQuestionBanks(keyword: String?, creatorId: Long?, pageable: Pageable): Page<QuestionBankResponse> {
+        val bankPage = questionBankRepository.searchQuestionBanks(keyword, creatorId, pageable)
+        val creatorIds = bankPage.content.map { it.creatorId }.toSet()
+        val creators = userRepository.findAllById(creatorIds).associateBy { it.id }
+        val bankIds = bankPage.content.mapNotNull { it.id }
+        val questionCounts = batchFetchQuestionCounts(bankIds)
+
+        return bankPage.map { bank ->
+            val creator = creators[bank.creatorId] ?: throw IllegalArgumentException("创建者不存在")
+            toQuestionBankResponse(bank, creator.realName ?: creator.username, questionCounts[bank.id] ?: 0)
+        }
+    }
+
     override fun addQuestionToBank(bankId: Long, questionId: Long, userId: Long, userRole: String) {
         // Verify bank exists
         val questionBank = questionBankRepository.findById(bankId).orElseThrow {

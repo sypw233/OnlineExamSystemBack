@@ -14,6 +14,9 @@ interface CourseService {
     fun getCourseById(id: Long): CourseResponse
     fun getAllActiveCourses(pageable: Pageable): Page<CourseResponse>
     fun getMyCourses(userId: Long, userRole: String): List<CourseResponse>
+
+    // Search courses with filters
+    fun searchCourses(keyword: String?, status: Int?, teacherId: Long?, pageable: Pageable): Page<CourseResponse>
     
     // Enrollment
     fun enrollStudent(courseId: Long, studentId: Long): EnrollmentResponse
