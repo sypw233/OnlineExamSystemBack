@@ -37,6 +37,9 @@ data class ExamResponse(
     
     @Schema(description = "考试总分", example = "100")
     val totalScore: Int,
+
+    @Schema(description = "当前学生本场考试得分，仅学生已完成考试列表返回", example = "86")
+    val studentScore: Int? = null,
     
     @Schema(
         description = "考试状态",

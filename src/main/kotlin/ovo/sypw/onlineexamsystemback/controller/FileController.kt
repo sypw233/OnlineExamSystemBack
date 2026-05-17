@@ -6,184 +6,110 @@ import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
+import org.springframework.http.MediaType
+import org.springframework.security.access.prepost.PreAuthorize
+import org.springframework.web.bind.annotation.DeleteMapping
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.RequestPart
+import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.multipart.MultipartFile
 import ovo.sypw.onlineexamsystemback.dto.response.FileUploadResponse
 import ovo.sypw.onlineexamsystemback.entity.User
 import ovo.sypw.onlineexamsystemback.security.CurrentUser
 import ovo.sypw.onlineexamsystemback.service.FileService
-import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
-import org.springframework.http.MediaType
-import org.springframework.security.access.prepost.PreAuthorize
-import org.springframework.web.bind.annotation.*
-import org.springframework.web.multipart.MultipartFile
 
 @RestController
 @RequestMapping("/api/files")
-@Tag(name = "文件管理", description = "文件上传、删除和访问")
+@Tag(name = "File Management", description = "Upload, delete and access files")
 class FileController(
     private val fileService: FileService
 ) {
 
-    @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     @PostMapping("/image", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
-    @Operation(
-        summary = "上传图片",
-        description = """
-            上传图片文件到BOS存储
-            
-            ## 支持的图片格式
-            - JPEG/JPG
-            - PNG
-            - GIF
-            - WEBP
-            - BMP
-            - SVG
-            
-            ## 文件大小限制
-            - 最大 5MB
-            
-            ## 分类说明
-            - `questions`: 题目配图
-            - `avatars`: 用户头像
-            - `temp`: 临时文件
-            
-            ## 权限
-            - 仅教师和管理员可以上传
-            
-            ## 返回
-            - 文件URL可直接用于访问（公共读）
-        """,
-        security = [SecurityRequirement(name = "Bearer Authentication")]
-    )
+    @Operation(summary = "Upload image", security = [SecurityRequirement(name = "Bearer Authentication")])
     fun uploadImage(
         @CurrentUser user: User,
         @Parameter(
-            description = "图片文件",
+            description = "Image file",
             required = true,
             content = [Content(mediaType = MediaType.MULTIPART_FORM_DATA_VALUE)]
         )
         @RequestPart("file") file: MultipartFile,
-        
         @Parameter(
-            description = "文件分类",
+            description = "File category",
             example = "questions",
             schema = Schema(allowableValues = ["questions", "avatars", "temp"])
         )
         @RequestParam(defaultValue = "temp") category: String
     ): Result<FileUploadResponse> {
+        if (!canUploadImage(user, category)) {
+            return Result.error("No permission to upload this image category", 403)
+        }
         return try {
-            val response = fileService.uploadImage(file, category, user.safeId)
-            Result.success(response, "图片上传成功")
+            val response = fileService.uploadImage(file, category, requireUserId(user))
+            Result.success(response, "Image uploaded")
         } catch (e: IllegalArgumentException) {
-            Result.error(e.message ?: "上传失败", 400)
+            Result.error(e.message ?: "Upload failed", 400)
         }
     }
 
     @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @PostMapping("/document", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
-    @Operation(
-        summary = "上传文档",
-        description = """
-            上传文档文件到BOS存储
-            
-            ## 支持的文档格式
-            - PDF
-            - Word (DOC, DOCX)
-            - Excel (XLS, XLSX)
-            - PowerPoint (PPT, PPTX)
-            - 文本文件 (TXT, CSV)
-            - 压缩文件 (ZIP, RAR)
-            
-            ## 文件大小限制
-            - 最大 20MB
-            
-            ## 分类说明
-            - `attachments`: 题目附件
-            - `materials`: 参考资料
-            - `temp`: 临时文件
-            
-            ## 权限
-            - 仅教师和管理员可以上传
-            
-            ## 返回
-            - 文件URL可直接用于下载（公共读）
-        """,
-        security = [SecurityRequirement(name = "Bearer Authentication")]
-    )
+    @Operation(summary = "Upload document", security = [SecurityRequirement(name = "Bearer Authentication")])
     fun uploadDocument(
         @CurrentUser user: User,
         @Parameter(
-            description = "文档文件",
+            description = "Document file",
             required = true,
             content = [Content(mediaType = MediaType.MULTIPART_FORM_DATA_VALUE)]
         )
         @RequestPart("file") file: MultipartFile,
-        
         @Parameter(
-            description = "文件分类",
+            description = "File category",
             example = "attachments",
             schema = Schema(allowableValues = ["attachments", "materials", "temp"])
         )
         @RequestParam(defaultValue = "temp") category: String
     ): Result<FileUploadResponse> {
         return try {
-            val response = fileService.uploadDocument(file, category, user.safeId)
-            Result.success(response, "文档上传成功")
+            val response = fileService.uploadDocument(file, category, requireUserId(user))
+            Result.success(response, "Document uploaded")
         } catch (e: IllegalArgumentException) {
-            Result.error(e.message ?: "上传失败", 400)
+            Result.error(e.message ?: "Upload failed", 400)
         }
     }
 
     @PreAuthorize("hasRole('TEACHER') or hasRole('ADMIN')")
     @DeleteMapping("/{*fileKey}")
-    @Operation(
-        summary = "删除文件",
-        description = """
-            从BOS存储中删除文件
-            
-            ## 权限
-            - 管理员可以删除任何文件
-            - 教师只能删除自己上传的文件
-            
-            ## 注意
-            - 文件删除后无法恢复
-            - fileKey 是完整的文件路径，例如: images/questions/20241126/abc123.jpg
-        """,
-        security = [SecurityRequirement(name = "Bearer Authentication")]
-    )
+    @Operation(summary = "Delete file", security = [SecurityRequirement(name = "Bearer Authentication")])
     fun deleteFile(
         @CurrentUser user: User,
         @Parameter(
-            description = "文件Key（完整路径）",
+            description = "File key",
             example = "images/questions/20241126/abc123.jpg"
         )
         @PathVariable fileKey: String
     ): Result<String> {
         return try {
-            fileService.deleteFile(fileKey, user.safeId, user.role)
-            Result.success("删除成功")
+            fileService.deleteFile(fileKey, requireUserId(user), user.role)
+            Result.success("Deleted")
         } catch (e: IllegalArgumentException) {
-            Result.error(e.message ?: "删除失败", 400)
+            Result.error(e.message ?: "Delete failed", 400)
         }
     }
 
     @GetMapping("/url/{*fileKey}")
-    @Operation(
-        summary = "获取文件URL",
-        description = """
-            获取文件的公共访问URL
-            
-            ## 说明
-            - 返回的URL可以直接在浏览器中访问
-            - 所有文件都是公共读权限
-            - 需要登录后才能获取文件URL
-        """,
-        security = [SecurityRequirement(name = "Bearer Authentication")]
-    )
+    @Operation(summary = "Get file url", security = [SecurityRequirement(name = "Bearer Authentication")])
     fun getFileUrl(
         @CurrentUser user: User,
         @Parameter(
-            description = "文件Key（完整路径）",
+            description = "File key",
             example = "images/questions/20241126/abc123.jpg"
         )
         @PathVariable fileKey: String
@@ -192,7 +118,19 @@ class FileController(
             val url = fileService.getFileUrl(fileKey)
             Result.success(mapOf("url" to url))
         } catch (e: Exception) {
-            Result.error(e.message ?: "获取URL失败", 400)
+            Result.error(e.message ?: "Get URL failed", 400)
         }
     }
+
+    private fun canUploadImage(user: User, category: String): Boolean {
+        val normalizedRole = user.role.uppercase()
+        return when (category.lowercase()) {
+            "avatars" -> true
+            "questions", "temp" -> normalizedRole == "TEACHER" || normalizedRole == "ADMIN"
+            else -> false
+        }
+    }
+
+    private fun requireUserId(user: User): Long =
+        user.id ?: throw IllegalStateException("User has no persisted id")
 }

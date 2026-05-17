@@ -40,13 +40,17 @@ class ExamServiceImpl(
             throw IllegalArgumentException("只有教师和管理员可以创建考试")
         }
 
+        val courseId = examRequest.courseId ?: throw IllegalArgumentException("课程ID不能为空")
+        val startTime = examRequest.startTime ?: throw IllegalArgumentException("开始时间不能为空")
+        val endTime = examRequest.endTime ?: throw IllegalArgumentException("结束时间不能为空")
+
         // Validate course exists
-        val course = courseRepository.findById(examRequest.courseId!!).orElseThrow {
+        val course = courseRepository.findById(courseId).orElseThrow {
             throw IllegalArgumentException("课程不存在")
         }
 
         // Validate time
-        if (examRequest.endTime!! <= examRequest.startTime!!) {
+        if (endTime <= startTime) {
             throw IllegalArgumentException("结束时间必须晚于开始时间")
         }
 
@@ -61,10 +65,10 @@ class ExamServiceImpl(
         val exam = Exam(
             title = examRequest.title,
             description = examRequest.description,
-            courseId = examRequest.courseId,
+            courseId = courseId,
             creatorId = creatorId,
-            startTime = examRequest.startTime,
-            endTime = examRequest.endTime,
+            startTime = startTime,
+            endTime = endTime,
             duration = examRequest.duration,
             totalScore = examRequest.totalScore,
             needsGrading = examRequest.needsGrading ?: false,
@@ -93,8 +97,11 @@ class ExamServiceImpl(
             throw IllegalArgumentException("只有草稿状态的考试可以修改")
         }
 
+        val startTime = examRequest.startTime ?: throw IllegalArgumentException("开始时间不能为空")
+        val endTime = examRequest.endTime ?: throw IllegalArgumentException("结束时间不能为空")
+
         // Validate time
-        if (examRequest.endTime!! <= examRequest.startTime!!) {
+        if (endTime <= startTime) {
             throw IllegalArgumentException("结束时间必须晚于开始时间")
         }
 
@@ -108,8 +115,8 @@ class ExamServiceImpl(
 
         exam.title = examRequest.title
         exam.description = examRequest.description
-        exam.startTime = examRequest.startTime
-        exam.endTime = examRequest.endTime
+        exam.startTime = startTime
+        exam.endTime = endTime
         exam.duration = examRequest.duration
         exam.totalScore = examRequest.totalScore
         exam.needsGrading = examRequest.needsGrading ?: false
@@ -383,13 +390,20 @@ class ExamServiceImpl(
         val creators = userRepository.findAllById(creatorIds).associateBy { it.id }
         val questionCounts = examQuestionRepository.countByExamIdIn(pageContent.mapNotNull { it.id })
             .associate { (it[0] as Number).toLong() to (it[1] as Number).toLong() }
+        val scoreByExamId = submissions.associate { it.examId to it.submitScore }
 
         val responses = pageContent.map { exam ->
             val course = courseRepository.findById(exam.courseId).orElseThrow {
                 throw IllegalArgumentException("课程不存在")
             }
             val creator = creators[exam.creatorId] ?: throw IllegalArgumentException("创建者不存在")
-            toExamResponse(exam, course.courseName, creator.realName ?: creator.username, questionCounts[exam.id] ?: 0)
+            toExamResponse(
+                exam = exam,
+                courseName = course.courseName,
+                creatorName = creator.realName ?: creator.username,
+                questionCount = questionCounts[exam.id] ?: 0,
+                studentScore = scoreByExamId[exam.id]
+            )
         }
 
         return org.springframework.data.domain.PageImpl(responses, pageable, exams.size.toLong())
@@ -513,19 +527,21 @@ class ExamServiceImpl(
             throw IllegalArgumentException("只有草稿状态的考试可以添加题目")
         }
 
+        val questionId = request.questionId ?: throw IllegalArgumentException("题目ID不能为空")
+
         // Validate question exists
-        questionRepository.findById(request.questionId!!).orElseThrow {
+        questionRepository.findById(questionId).orElseThrow {
             throw IllegalArgumentException("题目不存在")
         }
 
         // Check if already exists
-        if (examQuestionRepository.existsByExamIdAndQuestionId(examId, request.questionId)) {
+        if (examQuestionRepository.existsByExamIdAndQuestionId(examId, questionId)) {
             throw IllegalArgumentException("该题目已在考试中")
         }
 
         val examQuestion = ExamQuestion(
             examId = examId,
-            questionId = request.questionId,
+            questionId = questionId,
             score = request.score!!,
             sequence = request.sequence!!
         )
@@ -851,7 +867,13 @@ class ExamServiceImpl(
         }
     }
 
-    private fun toExamResponse(exam: Exam, courseName: String, creatorName: String, questionCount: Long): ExamResponse {
+    private fun toExamResponse(
+        exam: Exam,
+        courseName: String,
+        creatorName: String,
+        questionCount: Long,
+        studentScore: Int? = null
+    ): ExamResponse {
         val statusDescription = when (exam.status) {
             0 -> "草稿"
             1 -> "已发布"
@@ -871,6 +893,7 @@ class ExamServiceImpl(
             endTime = exam.endTime,
             duration = exam.duration,
             totalScore = exam.totalScore,
+            studentScore = studentScore,
             status = exam.status,
             statusDescription = statusDescription,
             needsGrading = exam.needsGrading,

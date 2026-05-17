@@ -236,7 +236,8 @@ class StatisticsServiceImpl(
                     examId = submission.examId,
                     examTitle = exam.title,
                     score = submission.submitScore,
-                    submitTime = submission.submitTime
+                    submitTime = submission.submitTime,
+                    submissionId = submission.id
                 )
             } else {
                 null
