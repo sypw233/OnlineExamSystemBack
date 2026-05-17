@@ -11,9 +11,9 @@ import ovo.sypw.onlineexamsystemback.dto.response.NotificationResponse
 import ovo.sypw.onlineexamsystemback.dto.response.UnreadCountResponse
 import ovo.sypw.onlineexamsystemback.entity.User
 import ovo.sypw.onlineexamsystemback.repository.CourseSelectionRepository
+import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.security.CurrentUser
 import ovo.sypw.onlineexamsystemback.service.NotificationService
-import ovo.sypw.onlineexamsystemback.extensions.safeId
 import ovo.sypw.onlineexamsystemback.util.Result
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
@@ -26,7 +26,8 @@ import org.springframework.web.bind.annotation.*
 @Tag(name = "通知管理", description = "系统通知和消息管理")
 class NotificationController(
     private val notificationService: NotificationService,
-    private val courseSelectionRepository: CourseSelectionRepository
+    private val courseSelectionRepository: CourseSelectionRepository,
+    private val userRepository: UserRepository
 ) {
 
     @GetMapping
@@ -59,7 +60,7 @@ class NotificationController(
         @CurrentUser user: User
     ): Result<Page<NotificationResponse>> {
         val pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createTime"))
-        val notifications = notificationService.getUserNotifications(user.safeId, pageable)
+        val notifications = notificationService.getUserNotifications(user.requireId(), pageable)
         
         return Result.success(notifications)
     }
@@ -82,7 +83,7 @@ class NotificationController(
     fun getUnreadCount(
         @CurrentUser user: User
     ): Result<UnreadCountResponse> {
-        val count = notificationService.getUnreadCount(user.safeId)
+        val count = notificationService.getUnreadCount(user.requireId())
         return Result.success(count)
     }
 
@@ -106,7 +107,7 @@ class NotificationController(
         @CurrentUser user: User
     ): Result<NotificationResponse> {
         return try {
-            val notification = notificationService.markAsRead(id, user.safeId)
+            val notification = notificationService.markAsRead(id, user.requireId())
             Result.success(notification, "标记成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "操作失败", 400)
@@ -127,7 +128,7 @@ class NotificationController(
     fun markAllAsRead(
         @CurrentUser user: User
     ): Result<Map<String, Int>> {
-        val count = notificationService.markAllAsRead(user.safeId)
+        val count = notificationService.markAllAsRead(user.requireId())
         return Result.success(mapOf("count" to count), "已全部标记为已读")
     }
 
@@ -152,18 +153,21 @@ class NotificationController(
         @Valid @RequestBody request: CreateNotificationRequest,
         @CurrentUser user: User
     ): Result<String> {
-        if (request.userIds.isNullOrEmpty() && request.courseId == null) {
-            return Result.error("请提供 userIds 或 courseId", 400)
-        }
-
-        val targetUserIds = if (request.courseId != null) {
-            val enrollments = courseSelectionRepository.findByCourseId(request.courseId)
+        val courseId = request.courseId
+        val targetUserIds: List<Long> = if (courseId != null) {
+            val enrollments = courseSelectionRepository.findByCourseId(courseId)
             if (enrollments.isEmpty()) {
                 return Result.error("该课程下没有学生", 400)
             }
             enrollments.map { it.studentId }
+        } else if (!request.userIds.isNullOrEmpty()) {
+            request.userIds.orEmpty()
         } else {
-            request.userIds!!
+            userRepository.findByStatus(1).mapNotNull { it.id }
+        }
+
+        if (targetUserIds.isEmpty()) {
+            return Result.error("没有可接收通知的用户", 400)
         }
 
         notificationService.createNotificationsForUsers(
@@ -197,10 +201,13 @@ class NotificationController(
         @CurrentUser user: User
     ): Result<String> {
         return try {
-            notificationService.deleteNotification(id, user.safeId)
+            notificationService.deleteNotification(id, user.requireId())
             Result.success("删除成功")
         } catch (e: IllegalArgumentException) {
             Result.error(e.message ?: "删除失败", 400)
         }
     }
 }
+
+private fun User.requireId(): Long =
+    id ?: throw IllegalStateException("User entity has not been persisted yet")
