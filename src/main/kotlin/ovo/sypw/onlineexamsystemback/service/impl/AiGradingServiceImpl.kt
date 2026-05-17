@@ -40,6 +40,20 @@ class AiGradingServiceImpl(
 
     companion object {
         private val logger = LoggerFactory.getLogger(AiGradingServiceImpl::class.java)
+
+        private data class PresetModel(
+            val id: String,
+            val modelName: String,
+            val baseUrl: String
+        )
+
+        private val presetModels = listOf(
+            PresetModel("kimi_default", "kimi-k2.6", "https://api.moonshot.ai/v1"),
+            PresetModel("openai_gpt_4o_mini", "gpt-4o-mini", "https://api.openai.com/v1"),
+            PresetModel("openai_gpt_4_1_mini", "gpt-4.1-mini", "https://api.openai.com/v1"),
+            PresetModel("deepseek_chat", "deepseek-chat", "https://api.deepseek.com/v1"),
+            PresetModel("qwen_plus", "qwen-plus", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+        )
     }
 
     /**
@@ -75,7 +89,8 @@ class AiGradingServiceImpl(
         val referenceAnswer: String,
         val systemPrompt: String,
         val modelName: String,
-        val temperature: Double,
+        val temperature: Double?,
+        val disableThinking: Boolean,
         val maxTokens: Int
     )
 
@@ -85,12 +100,14 @@ class AiGradingServiceImpl(
             val question = questionRepository.findById(request.questionId!!).orElseThrow {
                 throw IllegalArgumentException("题目不存在")
             }
+            val preset = resolvePresetModel()
             SingleGradingContext(
                 questionContent = question.content,
                 referenceAnswer = question.answer ?: "",
                 systemPrompt = getConfigValue("system_prompt"),
-                modelName = getConfigValue("model_name"),
-                temperature = getConfigValue("temperature").toDoubleOrNull() ?: 0.3,
+                modelName = preset?.modelName ?: getConfigValue("model_name"),
+                temperature = if (preset?.id == "kimi_default") null else getConfigValue("temperature").toDoubleOrNull() ?: 0.3,
+                disableThinking = preset?.id == "kimi_default",
                 maxTokens = getConfigValue("max_tokens").toIntOrNull() ?: 500
             )
         }!!
@@ -104,6 +121,7 @@ class AiGradingServiceImpl(
             maxScore = request.maxScore!!,
             modelName = context.modelName,
             temperature = context.temperature,
+            disableThinking = context.disableThinking,
             maxTokens = context.maxTokens
         )
 
@@ -384,7 +402,8 @@ class AiGradingServiceImpl(
         studentAnswer: String,
         maxScore: Int,
         modelName: String,
-        temperature: Double,
+        temperature: Double?,
+        disableThinking: Boolean,
         maxTokens: Int
     ): Map<String, Any> {
         val userMessage = """
@@ -399,16 +418,20 @@ class AiGradingServiceImpl(
             请评估学生的答案并给出评分建议。
         """.trimIndent()
 
-        return mapOf(
+        val payload = mutableMapOf<String, Any>(
             "model" to modelName,
             "messages" to listOf(
                 mapOf("role" to "system", "content" to systemPrompt),
                 mapOf("role" to "user", "content" to userMessage)
             ),
-            "temperature" to temperature,
             "max_tokens" to maxTokens,
             "response_format" to mapOf("type" to "json_object")
         )
+        temperature?.let { payload["temperature"] = it }
+        if (disableThinking) {
+            payload["thinking"] = mapOf("type" to "disabled")
+        }
+        return payload
     }
 
     /**
@@ -456,12 +479,25 @@ class AiGradingServiceImpl(
      * 获取API Base URL：优先从数据库读取，为空则从环境变量读取
      */
     private fun getApiBaseUrl(): String {
+        resolvePresetModel()?.let { return it.baseUrl }
         val dbValue = aiConfigRepository.findByConfigKey("api_base_url")?.configValue?.takeIf { it.isNotBlank() }
         if (dbValue != null) {
             return dbValue
         }
         return System.getenv("OPENAI_API_BASE_URL")
             ?: "https://api.openai.com/v1"
+    }
+
+    private fun getModelName(): String {
+        resolvePresetModel()?.let { return it.modelName }
+        return getConfigValue("model_name")
+    }
+
+    private fun resolvePresetModel(): PresetModel? {
+        val mode = aiConfigRepository.findByConfigKey("provider_mode")?.configValue?.lowercase()
+        if (mode != "preset") return null
+        val presetId = aiConfigRepository.findByConfigKey("provider_preset")?.configValue
+        return presetModels.firstOrNull { it.id == presetId }
     }
 
     /**

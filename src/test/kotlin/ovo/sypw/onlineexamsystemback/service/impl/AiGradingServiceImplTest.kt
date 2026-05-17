@@ -72,7 +72,7 @@ class AiGradingServiceImplTest {
     @Test
     fun `test getApiBaseUrl from database`() {
         // Given
-        val baseUrl = "https://api.moonshot.cn/v1"
+        val baseUrl = "https://api.moonshot.ai/v1"
         whenever(aiConfigRepository.findByConfigKey("api_base_url"))
             .thenReturn(AiConfig(configKey = "api_base_url", configValue = baseUrl))
 
