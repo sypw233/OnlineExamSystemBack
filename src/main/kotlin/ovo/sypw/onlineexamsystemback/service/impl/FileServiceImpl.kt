@@ -5,8 +5,14 @@ import com.baidubce.services.bos.model.ObjectMetadata
 import ovo.sypw.onlineexamsystemback.config.BosProperties
 import ovo.sypw.onlineexamsystemback.dto.response.FileUploadResponse
 import ovo.sypw.onlineexamsystemback.service.FileService
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.web.multipart.MultipartFile
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.Paths
+import java.nio.file.StandardCopyOption
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.*
@@ -14,7 +20,8 @@ import java.util.*
 @Service
 class FileServiceImpl(
     private val bosClient: BosClient,
-    private val bosProperties: BosProperties
+    private val bosProperties: BosProperties,
+    @Value("\${file.upload.path:./uploads/}") private val uploadPath: String
 ) : FileService {
 
     companion object {
@@ -50,12 +57,11 @@ class FileServiceImpl(
         // Generate file key
         val fileKey = generateFileKey("images", category, file.originalFilename ?: "image")
         
-        // Upload to BOS
-        uploadToBos(file, fileKey)
+        val fileUrl = storeFile(file, fileKey, preferLocal = category.equals("avatars", ignoreCase = true))
         
         return FileUploadResponse(
             fileKey = fileKey,
-            fileUrl = getFileUrl(fileKey),
+            fileUrl = fileUrl,
             fileName = file.originalFilename ?: "unknown",
             fileSize = file.size
         )
@@ -68,12 +74,11 @@ class FileServiceImpl(
         // Generate file key
         val fileKey = generateFileKey("documents", category, file.originalFilename ?: "document")
         
-        // Upload to BOS
-        uploadToBos(file, fileKey)
+        val fileUrl = storeFile(file, fileKey)
         
         return FileUploadResponse(
             fileKey = fileKey,
-            fileUrl = getFileUrl(fileKey),
+            fileUrl = fileUrl,
             fileName = file.originalFilename ?: "unknown",
             fileSize = file.size
         )
@@ -83,19 +88,24 @@ class FileServiceImpl(
         if (userRole != "admin" && userRole != "teacher") {
             throw IllegalArgumentException("无权删除文件")
         }
+        val localDeleted = deleteLocalFile(fileKey)
         try {
-            bosClient.deleteObject(bosProperties.bucketName, fileKey)
+            if (!localDeleted) {
+                bosClient.deleteObject(bosProperties.bucketName, fileKey)
+            } else {
+                runCatching { bosClient.deleteObject(bosProperties.bucketName, fileKey) }
+            }
         } catch (e: Exception) {
             throw IllegalArgumentException("删除文件失败: ${e.message}")
         }
     }
 
     override fun getFileUrl(fileKey: String): String {
-        return "https://${bosProperties.bucketName}.${bosProperties.endpoint}/${fileKey}"
+        return if (Files.exists(localFile(fileKey))) getLocalFileUrl(fileKey) else getBosFileUrl(fileKey)
     }
 
     override fun uploadBytes(data: ByteArray, fileKey: String, contentType: String): FileUploadResponse {
-        try {
+        val fileUrl = try {
             val metadata = ObjectMetadata()
             metadata.contentType = contentType
             metadata.contentLength = data.size.toLong()
@@ -107,15 +117,17 @@ class FileServiceImpl(
                 metadata
             )
 
-            return FileUploadResponse(
-                fileKey = fileKey,
-                fileUrl = getFileUrl(fileKey),
-                fileName = fileKey.substringAfterLast("/"),
-                fileSize = data.size.toLong()
-            )
+            getBosFileUrl(fileKey)
         } catch (e: Exception) {
-            throw IllegalArgumentException("文件上传失败: ${e.message}")
+            uploadBytesToLocal(data, fileKey)
         }
+
+        return FileUploadResponse(
+            fileKey = fileKey,
+            fileUrl = fileUrl,
+            fileName = fileKey.substringAfterLast("/"),
+            fileSize = data.size.toLong()
+        )
     }
 
     /**
@@ -190,6 +202,67 @@ class FileServiceImpl(
         val extension = originalFilename.substringAfterLast(".", "")
         
         return "$type/$category/$date/$uuid${if (extension.isNotEmpty()) ".$extension" else ""}"
+    }
+
+    private fun storeFile(file: MultipartFile, fileKey: String, preferLocal: Boolean = false): String {
+        if (preferLocal) {
+            uploadToLocal(file, fileKey)
+            return getLocalFileUrl(fileKey)
+        }
+
+        return try {
+            uploadToBos(file, fileKey)
+            getBosFileUrl(fileKey)
+        } catch (e: Exception) {
+            uploadToLocal(file, fileKey)
+            getLocalFileUrl(fileKey)
+        }
+    }
+
+    private fun getBosFileUrl(fileKey: String): String {
+        return "https://${bosProperties.bucketName}.${bosProperties.endpoint}/${fileKey}"
+    }
+
+    private fun getLocalFileUrl(fileKey: String): String {
+        val normalizedKey = fileKey.replace("\\", "/")
+        return runCatching {
+            ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/uploads/")
+                .path(normalizedKey)
+                .toUriString()
+        }.getOrElse { "/uploads/$normalizedKey" }
+    }
+
+    private fun localRoot(): Path {
+        return Paths.get(uploadPath).toAbsolutePath().normalize()
+    }
+
+    private fun localFile(fileKey: String): Path {
+        val root = localRoot()
+        val target = root.resolve(fileKey).normalize()
+        if (!target.startsWith(root)) {
+            throw IllegalArgumentException("Invalid file key")
+        }
+        return target
+    }
+
+    private fun uploadToLocal(file: MultipartFile, fileKey: String) {
+        val target = localFile(fileKey)
+        Files.createDirectories(target.parent)
+        file.inputStream.use { input ->
+            Files.copy(input, target, StandardCopyOption.REPLACE_EXISTING)
+        }
+    }
+
+    private fun uploadBytesToLocal(data: ByteArray, fileKey: String): String {
+        val target = localFile(fileKey)
+        Files.createDirectories(target.parent)
+        Files.write(target, data)
+        return getLocalFileUrl(fileKey)
+    }
+
+    private fun deleteLocalFile(fileKey: String): Boolean {
+        return runCatching { Files.deleteIfExists(localFile(fileKey)) }.getOrDefault(false)
     }
 
     /**
