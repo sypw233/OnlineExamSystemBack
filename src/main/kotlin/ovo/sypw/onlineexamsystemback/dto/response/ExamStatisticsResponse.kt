@@ -15,6 +15,12 @@ data class ExamStatisticsResponse(
     
     @Schema(description = "已提交人数", example = "48")
     val submittedCount: Int,
+
+    @Schema(description = "已批阅人数", example = "42")
+    val gradedCount: Int = 0,
+
+    @Schema(description = "待批阅人数", example = "6")
+    val pendingGradingCount: Int = 0,
     
     @Schema(description = "完成率(%)", example = "96.0")
     val completionRate: Double,

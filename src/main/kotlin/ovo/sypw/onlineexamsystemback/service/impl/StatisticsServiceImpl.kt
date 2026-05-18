@@ -44,6 +44,8 @@ class StatisticsServiceImpl(
         val scores = submittedSubmissions.mapNotNull { it.submitScore }
         val totalStudents = submissions.distinctBy { it.userId }.size
         val submittedCount = submittedSubmissions.size
+        val gradedCount = submittedSubmissions.count { it.status >= 2 }
+        val pendingGradingCount = (submittedCount - gradedCount).coerceAtLeast(0)
         val completionRate = if (totalStudents > 0) {
             round(submittedCount.toDouble() / totalStudents * 100 * 10) / 10
         } else 0.0
@@ -84,6 +86,8 @@ class StatisticsServiceImpl(
             examTitle = exam.title,
             totalStudents = totalStudents,
             submittedCount = submittedCount,
+            gradedCount = gradedCount,
+            pendingGradingCount = pendingGradingCount,
             completionRate = completionRate,
             averageScore = averageScore,
             highestScore = highestScore,
