@@ -41,6 +41,16 @@ class SubmissionServiceImpl(
             val exam = examRepository.findById(examId).orElseThrow {
                 throw IllegalArgumentException("考试不存在")
             }
+            val now = LocalDateTime.now()
+            if (exam.status != 1) {
+                throw IllegalArgumentException("考试未发布或已结束")
+            }
+            if (now.isBefore(exam.startTime)) {
+                throw IllegalArgumentException("考试尚未开始")
+            }
+            if (now.isAfter(exam.endTime)) {
+                throw IllegalArgumentException("考试已结束")
+            }
             val user = userRepository.findById(userId).orElseThrow { throw IllegalArgumentException("用户不存在") }
             return toSubmissionResponse(existingSubmission, exam.title, user.realName ?: user.username)
         }

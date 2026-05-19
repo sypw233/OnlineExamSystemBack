@@ -320,17 +320,17 @@ class ExamServiceImpl(
         val courseIds = enrollments.map { it.courseId }
         val now = LocalDateTime.now()
 
-        // Get all published exams for these courses
+        // Get all published exams that have not ended. Future exams are visible,
+        // but startExam/getExamPaper still block entry before startTime.
         val allExams = courseIds.flatMap { courseId ->
             examRepository.findByCourseIdAndStatus(courseId, 1)
         }.filter { exam ->
-            // Exam is currently active (started but not ended)
-            !now.isBefore(exam.startTime) && !now.isAfter(exam.endTime)
+            !now.isAfter(exam.endTime)
         }.filter { exam ->
             // Student has not submitted yet
             val submission = submissionRepository.findByExamIdAndUserId(exam.id!!, studentId)
             submission == null || submission.status == 0
-        }.sortedByDescending { it.startTime }
+        }.sortedWith(compareBy<Exam> { if (now.isBefore(it.startTime)) 1 else 0 }.thenBy { it.startTime })
 
         // Manual pagination
         val start = pageable.offset.toInt()
@@ -874,11 +874,14 @@ class ExamServiceImpl(
         questionCount: Long,
         studentScore: Int? = null
     ): ExamResponse {
-        val statusDescription = when (exam.status) {
-            0 -> "草稿"
-            1 -> "已发布"
-            2 -> "已结束"
-            else -> "未知"
+        val statusDescription = when {
+            exam.status == 1 && LocalDateTime.now().isBefore(exam.startTime) -> "考试时间未到"
+            else -> when (exam.status) {
+                0 -> "草稿"
+                1 -> "已发布"
+                2 -> "已结束"
+                else -> "未知"
+            }
         }
 
         return ExamResponse(
