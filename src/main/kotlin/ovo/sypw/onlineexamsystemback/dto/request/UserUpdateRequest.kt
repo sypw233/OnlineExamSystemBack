@@ -6,6 +6,10 @@ import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Size
 
 data class UserUpdateRequest(
+    @field:Size(max = 50, message = "用户名长度不能超过50")
+    @Schema(description = "用户名", example = "zhangsan", required = false)
+    val username: String? = null,
+
     @field:Size(max = 50, message = "真实姓名长度不能超过50")
     @Schema(description = "真实姓名", example = "张三", required = false)
     val realName: String? = null,

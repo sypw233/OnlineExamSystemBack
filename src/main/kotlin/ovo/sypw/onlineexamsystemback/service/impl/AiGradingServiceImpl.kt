@@ -478,6 +478,12 @@ class AiGradingServiceImpl(
      * 获取API Key：优先从数据库读取，为空则从环境变量读取
      */
     private fun getApiKey(): String {
+        if (isCustomMode()) {
+            val customDbValue = aiConfigRepository.findByConfigKey("custom_api_key")?.configValue?.takeIf { it.isNotBlank() }
+            if (customDbValue != null) {
+                return customDbValue
+            }
+        }
         val dbValue = aiConfigRepository.findByConfigKey("api_key")?.configValue?.takeIf { it.isNotBlank() }
         if (dbValue != null) {
             return dbValue
@@ -491,6 +497,12 @@ class AiGradingServiceImpl(
      */
     private fun getApiBaseUrl(): String {
         resolvePresetModel()?.let { return it.baseUrl }
+        if (isCustomMode()) {
+            val customDbValue = aiConfigRepository.findByConfigKey("custom_api_base_url")?.configValue?.takeIf { it.isNotBlank() }
+            if (customDbValue != null) {
+                return customDbValue
+            }
+        }
         val dbValue = aiConfigRepository.findByConfigKey("api_base_url")?.configValue?.takeIf { it.isNotBlank() }
         if (dbValue != null) {
             return dbValue
@@ -501,6 +513,12 @@ class AiGradingServiceImpl(
 
     private fun getModelName(): String {
         resolvePresetModel()?.let { return it.modelName }
+        if (isCustomMode()) {
+            val customModelName = aiConfigRepository.findByConfigKey("custom_model_name")?.configValue?.takeIf { it.isNotBlank() }
+            if (customModelName != null) {
+                return customModelName
+            }
+        }
         return getConfigValue("model_name")
     }
 
@@ -509,6 +527,10 @@ class AiGradingServiceImpl(
         if (mode != "preset") return null
         val presetId = aiConfigRepository.findByConfigKey("provider_preset")?.configValue
         return presetModels.firstOrNull { it.id == presetId }
+    }
+
+    private fun isCustomMode(): Boolean {
+        return aiConfigRepository.findByConfigKey("provider_mode")?.configValue?.lowercase() == "custom"
     }
 
     /**

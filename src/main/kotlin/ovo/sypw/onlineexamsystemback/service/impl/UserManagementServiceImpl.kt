@@ -7,7 +7,12 @@ import ovo.sypw.onlineexamsystemback.dto.response.BatchDeleteResult
 import ovo.sypw.onlineexamsystemback.dto.response.FailedDetail
 import ovo.sypw.onlineexamsystemback.dto.response.UserResponse
 import ovo.sypw.onlineexamsystemback.entity.User
-import ovo.sypw.onlineexamsystemback.repository.*
+import ovo.sypw.onlineexamsystemback.repository.CourseRepository
+import ovo.sypw.onlineexamsystemback.repository.ExamRepository
+import ovo.sypw.onlineexamsystemback.repository.ExamSubmissionRepository
+import ovo.sypw.onlineexamsystemback.repository.QuestionBankRepository
+import ovo.sypw.onlineexamsystemback.repository.QuestionRepository
+import ovo.sypw.onlineexamsystemback.repository.UserRepository
 import ovo.sypw.onlineexamsystemback.service.UserManagementService
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
@@ -58,7 +63,7 @@ class UserManagementServiceImpl(
 
     override fun getUserById(id: Long): UserResponse {
         val user = userRepository.findById(id).orElseThrow {
-            IllegalArgumentException("用户不存在, id=$id")
+            IllegalArgumentException("用户不存在: id=$id")
         }
         return user.toResponse()
     }
@@ -88,7 +93,14 @@ class UserManagementServiceImpl(
     @Transactional
     override fun updateUser(id: Long, request: UserUpdateRequest): UserResponse {
         val user = userRepository.findById(id).orElseThrow {
-            IllegalArgumentException("用户不存在, id=$id")
+            IllegalArgumentException("用户不存在: id=$id")
+        }
+
+        request.username?.let { newUsername ->
+            val existing = userRepository.findByUsername(newUsername)
+            if (existing != null && existing.id != id) {
+                throw IllegalArgumentException("用户名 '$newUsername' 已被其他用户使用")
+            }
         }
 
         request.email?.let { newEmail ->
@@ -98,6 +110,7 @@ class UserManagementServiceImpl(
             }
         }
 
+        request.username?.let { user.username = it }
         request.realName?.let { user.realName = it }
         request.email?.let { user.email = it }
         request.role?.let { user.role = it }
@@ -108,10 +121,9 @@ class UserManagementServiceImpl(
     @Transactional
     override fun deleteUser(id: Long) {
         if (!userRepository.existsById(id)) {
-            throw IllegalArgumentException("用户不存在, id=$id")
+            throw IllegalArgumentException("用户不存在: id=$id")
         }
 
-        // Check for associated records to prevent orphan data
         val submissionCount = examSubmissionRepository.findByUserId(id).size
         if (submissionCount > 0) {
             throw IllegalArgumentException("该用户有 $submissionCount 条考试提交记录，无法删除")
@@ -143,7 +155,7 @@ class UserManagementServiceImpl(
     @Transactional
     override fun resetPassword(id: Long, request: ResetPasswordRequest) {
         val user = userRepository.findById(id).orElseThrow {
-            IllegalArgumentException("用户不存在, id=$id")
+            IllegalArgumentException("用户不存在: id=$id")
         }
         user.password = passwordEncoder.encode(request.newPassword) ?: ""
         userRepository.save(user)
@@ -152,10 +164,9 @@ class UserManagementServiceImpl(
     @Transactional
     override fun toggleUserStatus(id: Long, enable: Boolean): UserResponse {
         val user = userRepository.findById(id).orElseThrow {
-            IllegalArgumentException("用户不存在, id=$id")
+            IllegalArgumentException("用户不存在: id=$id")
         }
-        val newStatus = if (enable) 1 else 0
-        user.status = newStatus
+        user.status = if (enable) 1 else 0
         return userRepository.save(user).toResponse()
     }
 
